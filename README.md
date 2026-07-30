@@ -1,8 +1,8 @@
-# Remio-like PC Host + Android 11 Client
+# LCD Dashboard + Android Agent
 
-Bo project nay la starter kit de lam ung dung tuong tu mo hinh Remio:
+Bo project nay la starter kit de quan ly Android gan sau man LCD:
 
-- `pc-host`: ung dung Windows/Electron de chia se man hinh qua WebRTC.
+- `pc-host`: ung dung Windows/Electron mo LCD dashboard tren PC.
 - `android-client`: ung dung Android 11 LCD Agent de dang ky man hinh LCD len relay.
 - `relay-server`: signaling server cong khai de host va client ket noi khi khac Wi-Fi.
 
@@ -10,7 +10,7 @@ Bo project nay la starter kit de lam ung dung tuong tu mo hinh Remio:
 
 ## Yeu cau
 
-### PC Host
+### PC Dashboard
 
 - Node.js 20+.
 - Windows 10/11.
@@ -56,12 +56,6 @@ Dashboard quan sat LCD nam tai:
 https://your-relay.example.com/dashboard.html
 ```
 
-Voi mo hinh cu PC share sang Android viewer, mo PC Host, nhap URL nay vao `Relay URL`, bam `Start sharing`, app se hien link:
-
-```text
-https://your-relay.example.com/client.html?session=<CODE>
-```
-
 Voi mo hinh LCD Agent moi, cai APK Android, mo app, luu `LCD-XXXXXX` hien lan dau. App mac dinh tro toi `https://remote-4617.onrender.com` va tu ket noi. PC mo dashboard se thay LCD online.
 
 ## Mo hinh LCD Agent
@@ -79,7 +73,7 @@ Nac tiep theo can lam:
 - Android stream man hinh len PC viewer bang WebRTC.
 - Chay nen bang foreground service/kiosk mode.
 
-## Chay cung Wi-Fi / LAN
+## Chay PC Dashboard
 
 ```powershell
 cd pc-host
@@ -87,30 +81,25 @@ npm.cmd install
 npm.cmd start
 ```
 
-Trong app PC, de trong `Relay URL`, bam `Start sharing`, chon man hinh/cua so can chia se. App se hien IP LAN va URL dang:
+App PC mac dinh mo:
 
 ```text
-http://<PC-IP>:4173/client.html
+https://remote-4617.onrender.com/dashboard.html
 ```
 
-## Chay Android Client
+Co the doi URL dashboard khi test local:
+
+```powershell
+$env:LCD_DASHBOARD_URL="https://your-relay.example.com/dashboard.html"
+npm.cmd start
+```
+
+## Chay Android Agent
 
 1. Mo thu muc `android-client` bang Android Studio.
 2. Sync Gradle.
 3. Chay tren may Android 11.
-4. Nhap URL cua PC Host, vi du `http://192.168.1.10:4173/client.html`.
-
-May Android va PC can nam chung mang LAN. Neu khong ket noi duoc, hay cho phep Windows Firewall mo cong `4173`.
-
-## Cau hinh PC Host mac dinh
-
-Co the dat relay/TURN mac dinh truoc khi chay app:
-
-```powershell
-$env:REMIO_RELAY_URL="https://your-relay.example.com"
-$env:REMIO_ICE_SERVERS_JSON='[{"urls":"stun:stun.l.google.com:19302"}]'
-npm.cmd start
-```
+4. App tu hien `LCD-XXXXXX` lan dau va tu ket noi `https://remote-4617.onrender.com`.
 
 ## Dong goi ban PC
 
@@ -125,15 +114,14 @@ Ban build hien tai chua ky code certificate, nen Windows SmartScreen co the can 
 
 ## Tinh nang hien co
 
-- PC host tao signaling server cuc bo.
-- Relay server cho ket noi khac Wi-Fi qua Internet.
-- Stream man hinh PC sang client bang WebRTC.
-- Android 11 client mo viewer bang WebView.
-- Client gui su kien cham/chuot qua WebRTC data channel ve host.
+- PC Dashboard mo dashboard LCD mac dinh.
+- Android Agent tu tao ma LCD co dinh va bao online.
+- Relay server quan ly danh sach LCD online/offline.
 
-## Viec can lam tiep de giong remote-control hoan chinh
+## Viec can lam tiep
 
-- Gan input client vao Windows bang native automation library nhu `@nut-tree/nut-js`.
-- Them ma PIN/password cho session.
-- Deploy relay server voi HTTPS/WSS va TURN server on dinh.
+- Android xin quyen capture man hinh bang MediaProjection.
+- Android stream man hinh len PC viewer bang WebRTC.
+- Chay nen bang foreground service/kiosk mode.
+- Deploy relay server voi HTTPS/WSS va TURN server neu can stream on dinh.
 - Build APK/AAB signed release.
