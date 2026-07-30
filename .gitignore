@@ -13,6 +13,7 @@ build/
 # Logs and caches
 *.log
 .gradle/
+local.properties
 .idea/
 .vscode/
 

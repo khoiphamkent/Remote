@@ -35,7 +35,7 @@ class MainActivity : Activity() {
 
         addressInput = EditText(this).apply {
             hint = "http://192.168.1.10:4173/client.html"
-            singleLine = true
+            setSingleLine(true)
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         }
 
