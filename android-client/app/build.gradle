@@ -10,9 +10,9 @@ android {
     defaultConfig {
         applicationId "com.example.remiolike.client"
         minSdk 23
-        targetSdk 35
-        versionCode 14
-        versionName "0.5.2"
+        targetSdk 33
+        versionCode 15
+        versionName "0.5.3-stable"
     }
 
     compileOptions {
@@ -27,5 +27,4 @@ android {
 
 dependencies {
     implementation "com.squareup.okhttp3:okhttp:4.12.0"
-    implementation "io.github.webrtc-sdk:android:144.7559.09"
 }

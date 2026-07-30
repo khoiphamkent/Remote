@@ -26,23 +26,6 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
-import org.webrtc.DataChannel
-import org.webrtc.DefaultVideoDecoderFactory
-import org.webrtc.DefaultVideoEncoderFactory
-import org.webrtc.EglBase
-import org.webrtc.IceCandidate
-import org.webrtc.MediaConstraints
-import org.webrtc.MediaStream
-import org.webrtc.PeerConnection
-import org.webrtc.PeerConnectionFactory
-import org.webrtc.RtpReceiver
-import org.webrtc.ScreenCapturerAndroid
-import org.webrtc.SdpObserver
-import org.webrtc.SessionDescription
-import org.webrtc.SurfaceTextureHelper
-import org.webrtc.VideoSource
-import org.webrtc.VideoTrack
-import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.security.SecureRandom
@@ -60,8 +43,6 @@ class LcdAgentService : Service() {
     private var reconnectScheduled = false
     private var heartbeatThread: Thread? = null
     private var mediaProjection: MediaProjection? = null
-    private var projectionResultCode = 0
-    private var projectionData: Intent? = null
     private var imageReader: ImageReader? = null
     private var virtualDisplay: VirtualDisplay? = null
     private var captureThread: HandlerThread? = null
@@ -70,17 +51,6 @@ class LcdAgentService : Service() {
     private var lastFrameAt = 0L
     private var screenWidth = 0
     private var screenHeight = 0
-    private var eglBase: EglBase? = null
-    private var peerConnectionFactory: PeerConnectionFactory? = null
-    private var peerConnection: PeerConnection? = null
-    private var screenCapturer: ScreenCapturerAndroid? = null
-    private var surfaceTextureHelper: SurfaceTextureHelper? = null
-    private var videoSource: VideoSource? = null
-    private var videoTrack: VideoTrack? = null
-    private var pendingWebRtcStart = false
-    private var rtcIceServers = listOf(
-        PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer()
-    )
     private val projectionCallback = object : MediaProjection.Callback() {
         override fun onStop() {
             hasProjection = false
@@ -97,7 +67,7 @@ class LcdAgentService : Service() {
         super.onCreate()
         isRunning = true
         createNotificationChannel()
-        startForeground(NOTIFICATION_ID, buildNotification("LCD Agent running"))
+        runCatching { startForeground(NOTIFICATION_ID, buildNotification("LCD Agent running")) }
         connectAgent()
     }
 
@@ -112,20 +82,19 @@ class LcdAgentService : Service() {
                     intent.getParcelableExtra(EXTRA_PROJECTION_DATA)
                 }
                 if (resultCode != 0 && data != null) {
-                    projectionResultCode = resultCode
-                    projectionData = Intent(data)
-                    hasProjection = true
-                    sendCommandResult("screen-permission", true, "Screen capture permission accepted")
-                    if (pendingWebRtcStart) {
-                        mainHandler.postDelayed({
-                            val ok = startWebRtcStream()
-                            sendWebRtcState(if (ok) "WebRTC screen stream started" else "WebRTC could not start")
-                        }, 300)
-                    } else if (captureActive) {
-                        mainHandler.post {
-                            val ok = runCatching { startScreenCapture() }.isSuccess && virtualDisplay != null
-                            if (!ok) sendWebRtcState("Screen stream could not start. Reopen setup permission.")
-                        }
+                    val accepted = runCatching {
+                        val manager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+                        mediaProjection = manager.getMediaProjection(resultCode, data)
+                        mediaProjection?.registerCallback(projectionCallback, mainHandler)
+                    }.isSuccess
+                    hasProjection = accepted && mediaProjection != null
+                    sendCommandResult(
+                        "screen-permission",
+                        hasProjection,
+                        if (hasProjection) "Screen capture permission accepted" else "Screen capture permission failed"
+                    )
+                    if (hasProjection && captureActive) {
+                        mainHandler.post { startScreenCaptureSafely() }
                     }
                 }
             }
@@ -140,7 +109,6 @@ class LcdAgentService : Service() {
         hasProjection = false
         mainHandler.removeCallbacksAndMessages(null)
         stopScreenCapture()
-        stopWebRtcStream()
         socket?.close(1000, "Service stopped")
         heartbeatThread?.interrupt()
         super.onDestroy()
@@ -208,20 +176,6 @@ class LcdAgentService : Service() {
 
     private fun handleServerMessage(text: String) {
         val message = runCatching { JSONObject(text) }.getOrNull() ?: return
-        when (message.optString("type")) {
-            "registered" -> {
-                updateIceServers(message.optJSONArray("iceServers"))
-                return
-            }
-            "webrtc-answer" -> {
-                applyWebRtcAnswer(message.optString("sdp"))
-                return
-            }
-            "webrtc-ice" -> {
-                addRemoteIceCandidate(message.optJSONObject("candidate"))
-                return
-            }
-        }
         if (message.optString("type") != "agent-command") return
 
         val commandId = message.optString("commandId")
@@ -234,34 +188,26 @@ class LcdAgentService : Service() {
             }
             "start-screen" -> {
                 captureActive = true
-                if (!ensureMediaProjection()) {
+                if (mediaProjection == null) {
                     sendCommandResult(commandId, false, "Open LCD Agent and accept screen sharing permission")
                 } else {
-                    val ok = runCatching { startScreenCapture() }.isSuccess && virtualDisplay != null
-                    sendCommandResult(commandId, ok, if (ok) "Screen stream started" else "Screen stream failed. Reopen setup permission.")
+                    val ok = startScreenCaptureSafely()
+                    sendCommandResult(commandId, ok, if (ok) "Screen stream started" else "Screen stream failed")
                 }
-            }
-            "start-webrtc" -> {
-                pendingWebRtcStart = true
-                captureActive = false
-                stopScreenCapture(keepProjection = false)
-                val ok = startWebRtcStream()
-                sendCommandResult(commandId, ok, if (ok) "WebRTC screen stream started" else "Open LCD Agent and accept screen sharing permission")
-            }
-            "stop-webrtc" -> {
-                pendingWebRtcStart = false
-                stopWebRtcStream()
-                sendCommandResult(commandId, true, "WebRTC screen stream stopped")
             }
             "stop-screen" -> {
                 captureActive = false
                 stopScreenCapture(keepProjection = true)
                 sendCommandResult(commandId, true, "Screen stream stopped")
             }
+            "start-webrtc" -> {
+                sendCommandResult(commandId, false, "WebRTC disabled in stable Android build")
+            }
+            "stop-webrtc" -> {
+                sendCommandResult(commandId, true, "WebRTC already stopped")
+            }
             "tap" -> {
-                val x = command.optDouble("x", -1.0)
-                val y = command.optDouble("y", -1.0)
-                val ok = performTap(x, y)
+                val ok = performTap(command.optDouble("x", -1.0), command.optDouble("y", -1.0))
                 sendCommandResult(commandId, ok, if (ok) "Tap sent" else "Accessibility service is not enabled")
             }
             "swipe" -> {
@@ -289,24 +235,11 @@ class LcdAgentService : Service() {
         }
     }
 
-    private fun ensureMediaProjection(): Boolean {
-        if (mediaProjection != null) return true
-        val data = projectionData ?: return false
-        if (projectionResultCode == 0) return false
-
-        val created = runCatching {
-            val manager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-            mediaProjection = manager.getMediaProjection(projectionResultCode, data)
-            mediaProjection?.registerCallback(projectionCallback, mainHandler)
-        }.isSuccess
-        if (!created) {
-            projectionResultCode = 0
-            projectionData = null
-            mediaProjection = null
-            hasProjection = false
-            return false
-        }
-        return mediaProjection != null
+    private fun startScreenCaptureSafely(): Boolean {
+        return runCatching {
+            startScreenCapture()
+            virtualDisplay != null
+        }.getOrDefault(false)
     }
 
     private fun startScreenCapture() {
@@ -372,212 +305,6 @@ class LcdAgentService : Service() {
         }
     }
 
-    private fun initWebRtcFactory() {
-        if (peerConnectionFactory != null) return
-
-        runCatching {
-            PeerConnectionFactory.initialize(
-                PeerConnectionFactory.InitializationOptions.builder(this)
-                    .createInitializationOptions()
-            )
-            eglBase = EglBase.create()
-            val eglContext = eglBase!!.eglBaseContext
-            val encoderFactory = DefaultVideoEncoderFactory(eglContext, true, true)
-            val decoderFactory = DefaultVideoDecoderFactory(eglContext)
-            peerConnectionFactory = PeerConnectionFactory.builder()
-                .setVideoEncoderFactory(encoderFactory)
-                .setVideoDecoderFactory(decoderFactory)
-                .createPeerConnectionFactory()
-        }.onFailure {
-            peerConnectionFactory = null
-            eglBase = null
-            sendWebRtcState("WebRTC unavailable on this device")
-        }
-    }
-
-    private fun startWebRtcStream(): Boolean {
-        initWebRtcFactory()
-        val factory = peerConnectionFactory ?: return false
-        val data = projectionData ?: return false
-
-        return runCatching {
-            pendingWebRtcStart = false
-            stopWebRtcStream()
-            val rtcConfig = PeerConnection.RTCConfiguration(rtcIceServers).apply {
-                sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
-            }
-
-            peerConnection = factory.createPeerConnection(rtcConfig, object : PeerConnection.Observer {
-                override fun onSignalingChange(state: PeerConnection.SignalingState?) = Unit
-
-                override fun onIceConnectionChange(state: PeerConnection.IceConnectionState?) {
-                    sendWebRtcState("WebRTC: ${state?.name ?: "unknown"}")
-                }
-
-                override fun onIceConnectionReceivingChange(receiving: Boolean) = Unit
-
-                override fun onIceGatheringChange(state: PeerConnection.IceGatheringState?) = Unit
-
-                override fun onIceCandidate(candidate: IceCandidate?) {
-                    if (candidate != null) sendLocalIceCandidate(candidate)
-                }
-
-                override fun onIceCandidatesRemoved(candidates: Array<out IceCandidate>?) = Unit
-
-                override fun onAddStream(stream: MediaStream?) = Unit
-
-                override fun onRemoveStream(stream: MediaStream?) = Unit
-
-                override fun onDataChannel(dataChannel: DataChannel?) = Unit
-
-                override fun onRenegotiationNeeded() = Unit
-
-                override fun onAddTrack(receiver: RtpReceiver?, streams: Array<out MediaStream>?) = Unit
-            }) ?: return false
-
-            val eglContext = eglBase?.eglBaseContext ?: return false
-            surfaceTextureHelper = SurfaceTextureHelper.create("lcd-webrtc-capture", eglContext)
-            videoSource = factory.createVideoSource(false)
-            screenCapturer = ScreenCapturerAndroid(data, object : MediaProjection.Callback() {
-                override fun onStop() {
-                    hasProjection = false
-                    stopWebRtcStream()
-                }
-            })
-            screenCapturer?.initialize(surfaceTextureHelper, applicationContext, videoSource!!.capturerObserver)
-            screenCapturer?.startCapture(WEBRTC_WIDTH, WEBRTC_HEIGHT, WEBRTC_FPS)
-            videoTrack = factory.createVideoTrack("lcd-screen-video", videoSource).apply {
-                setEnabled(true)
-            }
-            peerConnection?.addTrack(videoTrack, listOf("lcd-screen"))
-            peerConnection?.createOffer(object : SimpleSdpObserver() {
-                override fun onCreateSuccess(description: SessionDescription?) {
-                    val offer = description ?: return
-                    peerConnection?.setLocalDescription(SimpleSdpObserver(), offer)
-                    socket?.send(
-                        JSONObject()
-                            .put("type", "webrtc-offer")
-                            .put("deviceCode", deviceCode)
-                            .put("sdp", offer.description)
-                            .toString()
-                    )
-                }
-
-                override fun onCreateFailure(error: String?) {
-                    sendWebRtcState("WebRTC offer failed: ${error ?: "unknown"}")
-                }
-            }, MediaConstraints())
-
-            hasProjection = true
-            sendWebRtcState("WebRTC offer created")
-            true
-        }.getOrElse {
-            stopWebRtcStream()
-            sendWebRtcState("WebRTC failed. Use JPEG screen stream.")
-            false
-        }
-    }
-
-    private fun stopWebRtcStream() {
-        runCatching { screenCapturer?.stopCapture() }
-        screenCapturer?.dispose()
-        screenCapturer = null
-        videoTrack?.dispose()
-        videoTrack = null
-        videoSource?.dispose()
-        videoSource = null
-        surfaceTextureHelper?.dispose()
-        surfaceTextureHelper = null
-        peerConnection?.close()
-        peerConnection?.dispose()
-        peerConnection = null
-    }
-
-    private fun applyWebRtcAnswer(sdp: String) {
-        if (sdp.isBlank()) return
-        peerConnection?.setRemoteDescription(
-            SimpleSdpObserver(),
-            SessionDescription(SessionDescription.Type.ANSWER, sdp)
-        )
-    }
-
-    private fun addRemoteIceCandidate(candidateJson: JSONObject?) {
-        val candidate = candidateJson ?: return
-        val sdp = candidate.optString("candidate")
-        if (sdp.isBlank()) return
-        peerConnection?.addIceCandidate(
-            IceCandidate(
-                candidate.optString("sdpMid"),
-                candidate.optInt("sdpMLineIndex"),
-                sdp
-            )
-        )
-    }
-
-    private fun sendLocalIceCandidate(candidate: IceCandidate) {
-        socket?.send(
-            JSONObject()
-                .put("type", "webrtc-ice")
-                .put("deviceCode", deviceCode)
-                .put(
-                    "candidate",
-                    JSONObject()
-                        .put("sdpMid", candidate.sdpMid)
-                        .put("sdpMLineIndex", candidate.sdpMLineIndex)
-                        .put("candidate", candidate.sdp)
-                )
-                .toString()
-        )
-    }
-
-    private fun sendWebRtcState(message: String) {
-        socket?.send(
-            JSONObject()
-                .put("type", "webrtc-state")
-                .put("deviceCode", deviceCode)
-                .put("message", message)
-                .toString()
-        )
-    }
-
-    private fun updateIceServers(servers: JSONArray?) {
-        val parsed = mutableListOf<PeerConnection.IceServer>()
-        if (servers != null) {
-            for (index in 0 until servers.length()) {
-                val item = servers.optJSONObject(index) ?: continue
-                val username = item.optString("username")
-                val credential = item.optString("credential")
-                val urls = item.opt("urls")
-                when (urls) {
-                    is String -> addIceServer(parsed, urls, username, credential)
-                    is JSONArray -> {
-                        for (urlIndex in 0 until urls.length()) {
-                            addIceServer(parsed, urls.optString(urlIndex), username, credential)
-                        }
-                    }
-                }
-            }
-        }
-        if (parsed.isNotEmpty()) {
-            rtcIceServers = parsed
-        }
-    }
-
-    private fun addIceServer(
-        target: MutableList<PeerConnection.IceServer>,
-        url: String,
-        username: String,
-        credential: String
-    ) {
-        if (url.isBlank()) return
-        val builder = PeerConnection.IceServer.builder(url)
-        if (username.isNotBlank() || credential.isNotBlank()) {
-            builder.setUsername(username)
-            builder.setPassword(credential)
-        }
-        target.add(builder.createIceServer())
-    }
-
     private fun encodeImage(image: Image): String? {
         val plane = image.planes.firstOrNull() ?: return null
         val buffer = plane.buffer
@@ -591,13 +318,13 @@ class LcdAgentService : Service() {
         val cropped = Bitmap.createBitmap(bitmap, 0, 0, image.width, image.height)
         bitmap.recycle()
 
-        val targetWidth = 480
+        val targetWidth = 560
         val targetHeight = (targetWidth.toFloat() / cropped.width * cropped.height).toInt().coerceAtLeast(1)
         val scaled = Bitmap.createScaledBitmap(cropped, targetWidth, targetHeight, true)
         cropped.recycle()
 
         val output = ByteArrayOutputStream()
-        scaled.compress(Bitmap.CompressFormat.JPEG, 35, output)
+        scaled.compress(Bitmap.CompressFormat.JPEG, 45, output)
         scaled.recycle()
         return Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP)
     }
@@ -716,22 +443,9 @@ class LcdAgentService : Service() {
         private const val KEY_DEVICE_CODE = "device_code"
         private const val CHANNEL_ID = "lcd_agent"
         private const val NOTIFICATION_ID = 1001
-        private const val FRAME_INTERVAL_MS = 250L
-        private const val WEBRTC_WIDTH = 720
-        private const val WEBRTC_HEIGHT = 1280
-        private const val WEBRTC_FPS = 24
+        private const val FRAME_INTERVAL_MS = 180L
 
         @Volatile var isRunning = false
         @Volatile var hasProjection = false
     }
-}
-
-private open class SimpleSdpObserver : SdpObserver {
-    override fun onCreateSuccess(description: SessionDescription?) = Unit
-
-    override fun onSetSuccess() = Unit
-
-    override fun onCreateFailure(error: String?) = Unit
-
-    override fun onSetFailure(error: String?) = Unit
 }
