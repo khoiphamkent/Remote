@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Remio Like Host</title>
+    <link rel="stylesheet" href="/style.css">
+  </head>
+  <body>
+    <main class="shell">
+      <section class="panel">
+        <h1>PC Host</h1>
+        <p>Share this Windows screen to an Android 11 client by LAN or Internet relay.</p>
+        <label class="field">
+          <span>Relay URL</span>
+          <input id="relayUrl" placeholder="https://your-relay.example.com">
+        </label>
+        <label class="field">
+          <span>Session code</span>
+          <input id="sessionCode" maxlength="12">
+        </label>
+        <button id="startButton" class="button">Start sharing</button>
+        <div id="urls" class="url-list"></div>
+        <div id="status" class="status">Waiting to start.</div>
+      </section>
+      <section class="viewer">
+        <video id="preview" autoplay muted playsinline></video>
+      </section>
+    </main>
+    <script src="/host.js"></script>
+  </body>
+</html>

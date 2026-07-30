@@ -1,0 +1,21 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+*.exe
+*.blockmap
+*.msi
+*.apk
+*.aab
+
+# Logs and caches
+*.log
+.gradle/
+.idea/
+.vscode/
+
+# OS files
+Thumbs.db
+.DS_Store

@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Android Client</title>
+    <link rel="stylesheet" href="/style.css">
+  </head>
+  <body class="client-page">
+    <header class="client-toolbar">
+      <input id="sessionCode" aria-label="Session code" placeholder="Session code">
+      <button id="connectButton" class="button">Connect</button>
+      <span id="clientStatus" class="client-status">Idle</span>
+    </header>
+    <section class="viewer">
+      <video id="remoteVideo" autoplay playsinline></video>
+    </section>
+    <script src="/client.js"></script>
+  </body>
+</html>
