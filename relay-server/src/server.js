@@ -62,7 +62,8 @@ wss.on("connection", (socket) => {
           agents.set(sessionId, {
             deviceCode: sessionId,
             socket,
-            lastSeen: Date.now()
+            lastSeen: Date.now(),
+            accessibilityEnabled: Boolean(message.accessibilityEnabled)
           });
           socket.send(JSON.stringify({ type: "registered", sessionId, role, iceServers: ICE_SERVERS }));
           broadcastDevices();
@@ -90,6 +91,8 @@ wss.on("connection", (socket) => {
         const agent = agents.get(sessionId);
         if (agent) {
           agent.lastSeen = Date.now();
+          agent.accessibilityEnabled = Boolean(message.accessibilityEnabled);
+          broadcastDevices();
         }
         return;
       }
@@ -125,7 +128,9 @@ wss.on("connection", (socket) => {
       }
 
       if (role === "agent" && message.type === "command-result") {
+        updateAgentFromStatusMessage(sessionId, message);
         broadcastDashboards(message);
+        broadcastDevices();
         return;
       }
 
@@ -189,9 +194,17 @@ function getDeviceList() {
     .map((agent) => ({
       deviceCode: agent.deviceCode,
       online: agent.socket.readyState === WebSocket.OPEN,
-      lastSeen: agent.lastSeen
+      lastSeen: agent.lastSeen,
+      accessibilityEnabled: Boolean(agent.accessibilityEnabled)
     }))
     .sort((a, b) => a.deviceCode.localeCompare(b.deviceCode));
+}
+
+function updateAgentFromStatusMessage(deviceCode, message) {
+  const agent = agents.get(deviceCode);
+  if (!agent || typeof message.accessibilityEnabled === "undefined") return;
+  agent.accessibilityEnabled = Boolean(message.accessibilityEnabled);
+  agent.lastSeen = Date.now();
 }
 
 function broadcastDevices() {

@@ -4,6 +4,7 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -20,6 +21,7 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.os.IBinder
 import android.os.Looper
+import android.provider.Settings
 import android.util.Base64
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -140,7 +142,7 @@ class LcdAgentService : Service() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 socketOpen = true
                 connectionStatus = "Relay: connected"
-                webSocket.send("""{"type":"register","role":"agent","sessionId":"$deviceCode"}""")
+                webSocket.send(buildAgentStatusMessage("register"))
                 startHeartbeat(webSocket)
             }
 
@@ -177,7 +179,7 @@ class LcdAgentService : Service() {
             while (!Thread.currentThread().isInterrupted) {
                 try {
                     Thread.sleep(15000)
-                    if (!webSocket.send("""{"type":"heartbeat"}""")) {
+                    if (!webSocket.send(buildAgentStatusMessage("heartbeat"))) {
                         socketOpen = false
                         connectionStatus = "Relay: heartbeat failed"
                         scheduleReconnect()
@@ -206,6 +208,14 @@ class LcdAgentService : Service() {
             "open-url" -> {
                 val ok = openUrl(command.optString("url"))
                 sendCommandResult(commandId, ok, if (ok) "URL opened" else "Invalid URL")
+            }
+            "open-accessibility" -> {
+                val ok = openAccessibilitySettings()
+                sendCommandResult(commandId, ok, if (ok) "Accessibility settings opened on LCD" else "Could not open Accessibility settings")
+            }
+            "accessibility-status" -> {
+                val ok = isAccessibilityEnabled()
+                sendCommandResult(commandId, ok, if (ok) "Accessibility service is enabled" else "Accessibility service is not enabled")
             }
             "start-screen" -> {
                 captureActive = true
@@ -405,6 +415,35 @@ class LcdAgentService : Service() {
         }.isSuccess
     }
 
+    private fun openAccessibilitySettings(): Boolean {
+        return runCatching {
+            startActivity(
+                Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+        }.isSuccess
+    }
+
+    private fun isAccessibilityEnabled(): Boolean {
+        val expected = ComponentName(this, LcdAccessibilityService::class.java).flattenToString()
+        val enabledServices = Settings.Secure.getString(
+            contentResolver,
+            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+        ) ?: return false
+
+        return enabledServices.split(":").any { it.equals(expected, ignoreCase = true) }
+    }
+
+    private fun buildAgentStatusMessage(type: String): String {
+        return JSONObject()
+            .put("type", type)
+            .put("role", "agent")
+            .put("sessionId", deviceCode)
+            .put("deviceCode", deviceCode)
+            .put("accessibilityEnabled", isAccessibilityEnabled())
+            .toString()
+    }
+
     private fun sendCommandResult(commandId: String, ok: Boolean, message: String) {
         socket?.send(
             JSONObject()
@@ -413,6 +452,7 @@ class LcdAgentService : Service() {
                 .put("deviceCode", deviceCode)
                 .put("ok", ok)
                 .put("message", message)
+                .put("accessibilityEnabled", isAccessibilityEnabled())
                 .toString()
         )
     }

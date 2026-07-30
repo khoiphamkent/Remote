@@ -4,6 +4,7 @@ const commandStatus = document.querySelector("#commandStatus");
 const viewerPanel = document.querySelector("#viewerPanel");
 const viewerTitle = document.querySelector("#viewerTitle");
 const closeViewer = document.querySelector("#closeViewer");
+const enableControlButton = document.querySelector("#enableControlButton");
 const backButton = document.querySelector("#backButton");
 const homeButton = document.querySelector("#homeButton");
 const recentsButton = document.querySelector("#recentsButton");
@@ -18,6 +19,7 @@ const saveEditButton = document.querySelector("#saveEditButton");
 let socket;
 let activeDeviceCode = "";
 let editingDeviceCode = "";
+const devicesByCode = new Map();
 let lastFrameTime = 0;
 let pointerStart = null;
 const DEVICE_LABELS_KEY = "lcd-dashboard-device-labels";
@@ -34,13 +36,26 @@ function connectDashboard() {
   socket.addEventListener("message", (event) => {
     const message = JSON.parse(event.data);
     if (message.type === "devices") {
+      devicesByCode.clear();
+      for (const device of message.devices || []) {
+        devicesByCode.set(device.deviceCode, device);
+      }
       renderDevices(message.devices || []);
+      refreshViewerControls();
     }
 
     if (message.type === "command-result") {
       commandStatus.textContent = `${message.deviceCode}: ${message.ok ? "OK" : "Failed"} - ${message.message || ""}`;
       if (message.deviceCode === activeDeviceCode) {
         viewerStatus.textContent = message.message || "Waiting for screen frame...";
+        if (typeof message.accessibilityEnabled !== "undefined") {
+          const current = devicesByCode.get(message.deviceCode) || { deviceCode: message.deviceCode, online: true };
+          devicesByCode.set(message.deviceCode, {
+            ...current,
+            accessibilityEnabled: Boolean(message.accessibilityEnabled)
+          });
+          refreshViewerControls();
+        }
         if (message.ok && message.message === "Screen capture permission accepted") {
           window.setTimeout(() => {
             if (activeDeviceCode === message.deviceCode) {
@@ -98,6 +113,16 @@ function renderDevices(devices) {
     status.className = device.online ? "device-status online" : "device-status";
     status.textContent = device.online ? "Online" : "Offline";
 
+    const control = document.createElement("span");
+    control.className = device.accessibilityEnabled ? "device-status online" : "device-status warning";
+    control.textContent = device.accessibilityEnabled ? "Control: Enabled" : "Control: Needs Accessibility";
+
+    const enableControl = document.createElement("button");
+    enableControl.className = "button secondary-button";
+    enableControl.textContent = "Enable Control";
+    enableControl.onclick = () => sendAgentCommand(device.deviceCode, { type: "open-accessibility" });
+    enableControl.hidden = Boolean(device.accessibilityEnabled);
+
     const edit = document.createElement("button");
     edit.className = "button secondary-button";
     edit.textContent = "Edit";
@@ -110,6 +135,8 @@ function renderDevices(devices) {
 
     row.appendChild(titleGroup);
     row.appendChild(status);
+    row.appendChild(control);
+    row.appendChild(enableControl);
     row.appendChild(edit);
     row.appendChild(action);
     deviceList.appendChild(row);
@@ -127,6 +154,17 @@ function openViewer(deviceCode) {
   commandStatus.textContent = `${deviceCode}: starting screen view...`;
   socket.send(JSON.stringify({ type: "watch-device", deviceCode }));
   sendAgentCommand(deviceCode, { type: "start-screen" });
+  sendAgentCommand(deviceCode, { type: "accessibility-status" });
+  refreshViewerControls();
+}
+
+function refreshViewerControls() {
+  const device = devicesByCode.get(activeDeviceCode);
+  const enabled = Boolean(device?.accessibilityEnabled);
+  enableControlButton.hidden = enabled || !activeDeviceCode;
+  backButton.disabled = !enabled;
+  homeButton.disabled = !enabled;
+  recentsButton.disabled = !enabled;
 }
 
 function openEditDialog(deviceCode) {
@@ -212,6 +250,10 @@ homeButton.addEventListener("click", () => {
 
 recentsButton.addEventListener("click", () => {
   if (activeDeviceCode) sendAgentCommand(activeDeviceCode, { type: "recents" });
+});
+
+enableControlButton.addEventListener("click", () => {
+  if (activeDeviceCode) sendAgentCommand(activeDeviceCode, { type: "open-accessibility" });
 });
 
 saveEditButton.addEventListener("click", saveEditLabel);
