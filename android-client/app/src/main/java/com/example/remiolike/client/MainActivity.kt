@@ -38,6 +38,7 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         buildUi()
         showDeviceCodeOnce()
+        relayInput.post { connectAgent() }
     }
 
     override fun onDestroy() {
@@ -70,7 +71,7 @@ class MainActivity : Activity() {
         relayInput = EditText(this).apply {
             hint = "https://your-relay.onrender.com"
             setSingleLine(true)
-            setText(prefs.getString(KEY_RELAY_URL, ""))
+            setText(prefs.getString(KEY_RELAY_URL, DEFAULT_RELAY_URL))
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
@@ -180,6 +181,7 @@ class MainActivity : Activity() {
     }
 
     companion object {
+        private const val DEFAULT_RELAY_URL = "https://remote-4617.onrender.com"
         private const val KEY_DEVICE_CODE = "device_code"
         private const val KEY_CODE_ACKNOWLEDGED = "device_code_acknowledged"
         private const val KEY_RELAY_URL = "relay_url"

@@ -62,7 +62,7 @@ Voi mo hinh cu PC share sang Android viewer, mo PC Host, nhap URL nay vao `Relay
 https://your-relay.example.com/client.html?session=<CODE>
 ```
 
-Voi mo hinh LCD Agent moi, cai APK Android, mo app, luu `LCD-XXXXXX` hien lan dau, nhap `Relay URL`, bam `Start Agent`. PC mo dashboard se thay LCD online.
+Voi mo hinh LCD Agent moi, cai APK Android, mo app, luu `LCD-XXXXXX` hien lan dau. App mac dinh tro toi `https://remote-4617.onrender.com` va tu ket noi. PC mo dashboard se thay LCD online.
 
 ## Mo hinh LCD Agent
 
@@ -70,7 +70,7 @@ Nac hien tai da co:
 
 - Android tu tao `LCD-XXXXXX` mot lan va luu co dinh trong may.
 - Code hien lan dau de nguoi lap dat ghi lai, khong co o sua code.
-- Android ket noi Render relay va bao online.
+- Android auto-fill `https://remote-4617.onrender.com`, tu ket noi Render relay va bao online.
 - Relay co `/dashboard.html` va `/devices` de PC xem LCD online.
 
 Nac tiep theo can lam:
