@@ -72,8 +72,8 @@ Nac hien tai da co:
 
 Quyen can bat tren Android:
 
-- Khi PC bam `View`, Android se hien prompt share/capture screen. Nguoi lap dat can dong y.
-- De click/tap tu PC co tac dung tren Android, vao Android `Settings` -> `Accessibility` -> `LCD Agent` -> bat service.
+- Khi mo app, Android Agent tu xin quyen share/capture screen. Nguoi lap dat chi can dong y.
+- De click/tap tu PC co tac dung tren Android, app se mo huong dan Accessibility. Neu Android bao app bi han che, vao App settings -> menu top-right -> `Allow restricted settings`, sau do vao Accessibility -> LCD Agent -> bat service.
 
 Nac tiep theo can lam:
 

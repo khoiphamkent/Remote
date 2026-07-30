@@ -2,6 +2,7 @@ package com.example.remiolike.client
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -16,6 +17,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
+import android.provider.Settings
 import android.util.Base64
 import android.view.ViewGroup
 import android.widget.Button
@@ -43,8 +45,11 @@ class MainActivity : Activity() {
     private lateinit var projectionManager: MediaProjectionManager
     private lateinit var relayInput: EditText
     private lateinit var statusText: TextView
+    private lateinit var permissionStatusText: TextView
     private lateinit var connectButton: Button
     private lateinit var captureButton: Button
+    private lateinit var setupButton: Button
+    private lateinit var accessibilityButton: Button
 
     private var socket: WebSocket? = null
     private var heartbeatThread: Thread? = null
@@ -70,8 +75,19 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         projectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         buildUi()
+        val needsCodeAcknowledgement = !prefs.getBoolean(KEY_CODE_ACKNOWLEDGED, false)
         showDeviceCodeOnce()
-        relayInput.post { connectAgent() }
+        relayInput.post {
+            connectAgent()
+            if (!needsCodeAcknowledgement) {
+                startInitialPermissionSetup()
+            }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        refreshPermissionStatus()
     }
 
     override fun onDestroy() {
@@ -92,9 +108,14 @@ class MainActivity : Activity() {
             startScreenCapture()
             captureButton.text = "Screen View Enabled"
             setStatus("Screen view enabled")
+            refreshPermissionStatus()
+            if (!isAccessibilityEnabled()) {
+                showAccessibilityHelp()
+            }
         } else {
             captureRequestedByPc = false
             setStatus("Screen capture permission denied")
+            refreshPermissionStatus()
             socket?.let { sendCommandResult(it, "screen-permission", false, "Screen capture permission denied") }
         }
     }
@@ -142,9 +163,25 @@ class MainActivity : Activity() {
             setOnClickListener { requestScreenCapture() }
         }
 
+        setupButton = Button(this).apply {
+            text = "Setup Permissions"
+            setOnClickListener { startInitialPermissionSetup() }
+        }
+
+        accessibilityButton = Button(this).apply {
+            text = "Open Accessibility Settings"
+            setOnClickListener { showAccessibilityHelp() }
+        }
+
         statusText = TextView(this).apply {
             text = "Offline"
             textSize = 16f
+            setPadding(0, 18, 0, 0)
+        }
+
+        permissionStatusText = TextView(this).apply {
+            text = "Checking permissions..."
+            textSize = 15f
             setPadding(0, 18, 0, 0)
         }
 
@@ -153,7 +190,10 @@ class MainActivity : Activity() {
         root.addView(relayInput)
         root.addView(connectButton)
         root.addView(captureButton)
+        root.addView(setupButton)
+        root.addView(accessibilityButton)
         root.addView(statusText)
+        root.addView(permissionStatusText)
         setContentView(root)
     }
 
@@ -165,9 +205,69 @@ class MainActivity : Activity() {
             .setMessage("$deviceCode\n\nSave this code. It is generated once and cannot be edited.")
             .setPositiveButton("I saved it") { _, _ ->
                 prefs.edit().putBoolean(KEY_CODE_ACKNOWLEDGED, true).apply()
+                startInitialPermissionSetup()
             }
             .setCancelable(false)
             .show()
+    }
+
+    private fun startInitialPermissionSetup() {
+        refreshPermissionStatus()
+
+        if (mediaProjection == null) {
+            requestScreenCapture()
+            return
+        }
+
+        if (!isAccessibilityEnabled()) {
+            showAccessibilityHelp()
+        }
+    }
+
+    private fun showAccessibilityHelp() {
+        AlertDialog.Builder(this)
+            .setTitle("Enable LCD Agent control")
+            .setMessage(
+                "Step 1: If Android says this app is restricted, open App settings and choose Allow restricted settings from the top-right menu.\n\n" +
+                    "Step 2: Open Accessibility settings, select LCD Agent, then turn it on.\n\n" +
+                    "Android does not allow apps to enable this permission automatically."
+            )
+            .setPositiveButton("Open Accessibility") { _, _ -> openAccessibilitySettings() }
+            .setNegativeButton("Open App Settings") { _, _ -> openAppSettings() }
+            .setNeutralButton("Later", null)
+            .show()
+    }
+
+    private fun openAccessibilitySettings() {
+        runCatching {
+            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+        }
+    }
+
+    private fun openAppSettings() {
+        runCatching {
+            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                .setData(Uri.parse("package:$packageName"))
+            startActivity(intent)
+        }
+    }
+
+    private fun refreshPermissionStatus() {
+        if (!::permissionStatusText.isInitialized) return
+
+        val screen = if (mediaProjection == null) "Screen view: needs accept" else "Screen view: enabled"
+        val tap = if (isAccessibilityEnabled()) "Tap control: enabled" else "Tap control: needs Accessibility"
+        permissionStatusText.text = "$screen\n$tap"
+    }
+
+    private fun isAccessibilityEnabled(): Boolean {
+        val expected = ComponentName(this, LcdAccessibilityService::class.java).flattenToString()
+        val enabledServices = Settings.Secure.getString(
+            contentResolver,
+            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+        ) ?: return false
+
+        return enabledServices.split(":").any { it.equals(expected, ignoreCase = true) }
     }
 
     private fun connectAgent() {
@@ -284,6 +384,7 @@ class MainActivity : Activity() {
                 val x = command.optDouble("x", -1.0)
                 val y = command.optDouble("y", -1.0)
                 val ok = performTap(x, y)
+                if (!ok) runOnUiThread { showAccessibilityHelp() }
                 sendCommandResult(webSocket, commandId, ok, if (ok) "Tap sent" else "Accessibility service is not enabled")
             }
 
@@ -356,6 +457,7 @@ class MainActivity : Activity() {
             mediaProjection?.stop()
             mediaProjection = null
             captureRequestedByPc = false
+            runOnUiThread { refreshPermissionStatus() }
         }
     }
 
