@@ -1,0 +1,378 @@
+package com.example.remiolike.client
+
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.Service
+import android.content.Context
+import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.PixelFormat
+import android.hardware.display.DisplayManager
+import android.hardware.display.VirtualDisplay
+import android.media.Image
+import android.media.ImageReader
+import android.media.projection.MediaProjection
+import android.media.projection.MediaProjectionManager
+import android.net.Uri
+import android.os.Build
+import android.os.Handler
+import android.os.HandlerThread
+import android.os.IBinder
+import android.os.Looper
+import android.util.Base64
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.Response
+import okhttp3.WebSocket
+import okhttp3.WebSocketListener
+import org.json.JSONObject
+import java.io.ByteArrayOutputStream
+import java.security.SecureRandom
+import java.util.Locale
+import java.util.concurrent.TimeUnit
+
+class LcdAgentService : Service() {
+    private val client = OkHttpClient.Builder()
+        .pingInterval(20, TimeUnit.SECONDS)
+        .build()
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val prefs by lazy { getSharedPreferences("lcd_agent", Context.MODE_PRIVATE) }
+
+    private var socket: WebSocket? = null
+    private var reconnectScheduled = false
+    private var heartbeatThread: Thread? = null
+    private var mediaProjection: MediaProjection? = null
+    private var imageReader: ImageReader? = null
+    private var virtualDisplay: VirtualDisplay? = null
+    private var captureThread: HandlerThread? = null
+    private var captureHandler: Handler? = null
+    private var captureActive = false
+    private var lastFrameAt = 0L
+    private var screenWidth = 0
+    private var screenHeight = 0
+    private val projectionCallback = object : MediaProjection.Callback() {
+        override fun onStop() {
+            hasProjection = false
+            stopScreenCapture(keepProjection = true)
+            mediaProjection = null
+        }
+    }
+
+    private val deviceCode: String by lazy {
+        prefs.getString(KEY_DEVICE_CODE, null) ?: createAndStoreDeviceCode()
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        isRunning = true
+        createNotificationChannel()
+        startForeground(NOTIFICATION_ID, buildNotification("LCD Agent running"))
+        connectAgent()
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        when (intent?.action) {
+            ACTION_SET_PROJECTION -> {
+                val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, 0)
+                val data = if (Build.VERSION.SDK_INT >= 33) {
+                    intent.getParcelableExtra(EXTRA_PROJECTION_DATA, Intent::class.java)
+                } else {
+                    @Suppress("DEPRECATION")
+                    intent.getParcelableExtra(EXTRA_PROJECTION_DATA)
+                }
+                if (resultCode != 0 && data != null) {
+                    val manager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+                    mediaProjection = manager.getMediaProjection(resultCode, data)
+                    mediaProjection?.registerCallback(projectionCallback, mainHandler)
+                    hasProjection = true
+                    startScreenCapture()
+                    sendCommandResult("screen-permission", true, "Screen capture permission accepted")
+                }
+            }
+            ACTION_STOP -> stopSelf()
+            else -> connectAgent()
+        }
+        return START_STICKY
+    }
+
+    override fun onDestroy() {
+        isRunning = false
+        hasProjection = false
+        mainHandler.removeCallbacksAndMessages(null)
+        stopScreenCapture()
+        socket?.close(1000, "Service stopped")
+        heartbeatThread?.interrupt()
+        super.onDestroy()
+    }
+
+    override fun onBind(intent: Intent?): IBinder? = null
+
+    private fun connectAgent() {
+        if (socket?.send("""{"type":"heartbeat"}""") == true) return
+        reconnectScheduled = false
+
+        val request = Request.Builder().url(toWebSocketUrl(DEFAULT_RELAY_URL)).build()
+        socket = client.newWebSocket(request, object : WebSocketListener() {
+            override fun onOpen(webSocket: WebSocket, response: Response) {
+                webSocket.send("""{"type":"register","role":"agent","sessionId":"$deviceCode"}""")
+                startHeartbeat(webSocket)
+            }
+
+            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                scheduleReconnect()
+            }
+
+            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                scheduleReconnect()
+            }
+
+            override fun onMessage(webSocket: WebSocket, text: String) {
+                handleServerMessage(text)
+            }
+        })
+    }
+
+    private fun scheduleReconnect() {
+        if (reconnectScheduled) return
+        reconnectScheduled = true
+        mainHandler.postDelayed({
+            socket = null
+            connectAgent()
+        }, 5000)
+    }
+
+    private fun startHeartbeat(webSocket: WebSocket) {
+        heartbeatThread?.interrupt()
+        heartbeatThread = Thread {
+            while (!Thread.currentThread().isInterrupted) {
+                try {
+                    Thread.sleep(15000)
+                    webSocket.send("""{"type":"heartbeat"}""")
+                } catch (_: InterruptedException) {
+                    return@Thread
+                }
+            }
+        }.also { it.start() }
+    }
+
+    private fun handleServerMessage(text: String) {
+        val message = runCatching { JSONObject(text) }.getOrNull() ?: return
+        if (message.optString("type") != "agent-command") return
+
+        val commandId = message.optString("commandId")
+        val command = message.optJSONObject("command") ?: JSONObject()
+        when (command.optString("type")) {
+            "identify" -> sendCommandResult(commandId, true, "LCD Agent is running")
+            "open-url" -> {
+                val ok = openUrl(command.optString("url"))
+                sendCommandResult(commandId, ok, if (ok) "URL opened" else "Invalid URL")
+            }
+            "start-screen" -> {
+                captureActive = true
+                if (mediaProjection == null) {
+                    sendCommandResult(commandId, false, "Open LCD Agent and accept screen sharing permission")
+                } else {
+                    startScreenCapture()
+                    sendCommandResult(commandId, true, "Screen stream started")
+                }
+            }
+            "stop-screen" -> {
+                captureActive = false
+                stopScreenCapture(keepProjection = true)
+                sendCommandResult(commandId, true, "Screen stream stopped")
+            }
+            "tap" -> {
+                val x = command.optDouble("x", -1.0)
+                val y = command.optDouble("y", -1.0)
+                val ok = performTap(x, y)
+                sendCommandResult(commandId, ok, if (ok) "Tap sent" else "Accessibility service is not enabled")
+            }
+            else -> sendCommandResult(commandId, false, "Unknown command")
+        }
+    }
+
+    private fun startScreenCapture() {
+        val projection = mediaProjection ?: return
+        if (virtualDisplay != null) return
+
+        val metrics = resources.displayMetrics
+        screenWidth = metrics.widthPixels
+        screenHeight = metrics.heightPixels
+
+        captureThread = HandlerThread("lcd-screen-capture").also { it.start() }
+        captureHandler = Handler(captureThread!!.looper)
+        imageReader = ImageReader.newInstance(screenWidth, screenHeight, PixelFormat.RGBA_8888, 2)
+        virtualDisplay = projection.createVirtualDisplay(
+            "lcd-agent-screen",
+            screenWidth,
+            screenHeight,
+            metrics.densityDpi,
+            DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+            imageReader!!.surface,
+            null,
+            captureHandler
+        )
+
+        imageReader?.setOnImageAvailableListener({ reader ->
+            val now = System.currentTimeMillis()
+            if (now - lastFrameAt < FRAME_INTERVAL_MS) {
+                reader.acquireLatestImage()?.close()
+                return@setOnImageAvailableListener
+            }
+
+            val image = reader.acquireLatestImage() ?: return@setOnImageAvailableListener
+            try {
+                val frame = encodeImage(image)
+                if (frame != null) {
+                    lastFrameAt = now
+                    sendScreenFrame(frame)
+                }
+            } finally {
+                image.close()
+            }
+        }, captureHandler)
+    }
+
+    private fun stopScreenCapture(keepProjection: Boolean = false) {
+        virtualDisplay?.release()
+        virtualDisplay = null
+        imageReader?.close()
+        imageReader = null
+        captureThread?.quitSafely()
+        captureThread = null
+        captureHandler = null
+
+        if (!keepProjection) {
+            mediaProjection?.stop()
+            mediaProjection = null
+            hasProjection = false
+        }
+    }
+
+    private fun encodeImage(image: Image): String? {
+        val plane = image.planes.firstOrNull() ?: return null
+        val buffer = plane.buffer
+        val pixelStride = plane.pixelStride
+        val rowStride = plane.rowStride
+        val rowPadding = rowStride - pixelStride * image.width
+        val paddedWidth = image.width + rowPadding / pixelStride
+
+        val bitmap = Bitmap.createBitmap(paddedWidth, image.height, Bitmap.Config.ARGB_8888)
+        bitmap.copyPixelsFromBuffer(buffer)
+        val cropped = Bitmap.createBitmap(bitmap, 0, 0, image.width, image.height)
+        bitmap.recycle()
+
+        val targetWidth = 360
+        val targetHeight = (targetWidth.toFloat() / cropped.width * cropped.height).toInt().coerceAtLeast(1)
+        val scaled = Bitmap.createScaledBitmap(cropped, targetWidth, targetHeight, true)
+        cropped.recycle()
+
+        val output = ByteArrayOutputStream()
+        scaled.compress(Bitmap.CompressFormat.JPEG, 25, output)
+        scaled.recycle()
+        return Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP)
+    }
+
+    private fun sendScreenFrame(frame: String) {
+        socket?.send(
+            JSONObject()
+                .put("type", "screen-frame")
+                .put("deviceCode", deviceCode)
+                .put("width", screenWidth)
+                .put("height", screenHeight)
+                .put("frame", frame)
+                .put("ts", System.currentTimeMillis())
+                .toString()
+        )
+    }
+
+    private fun performTap(x: Double, y: Double): Boolean {
+        if (x !in 0.0..1.0 || y !in 0.0..1.0) return false
+        val width = if (screenWidth > 0) screenWidth else resources.displayMetrics.widthPixels
+        val height = if (screenHeight > 0) screenHeight else resources.displayMetrics.heightPixels
+        return LcdAccessibilityService.tap((x * width).toFloat(), (y * height).toFloat())
+    }
+
+    private fun openUrl(value: String): Boolean {
+        if (!value.startsWith("http://") && !value.startsWith("https://")) return false
+        return runCatching {
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(value))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            startActivity(intent)
+        }.isSuccess
+    }
+
+    private fun sendCommandResult(commandId: String, ok: Boolean, message: String) {
+        socket?.send(
+            JSONObject()
+                .put("type", "command-result")
+                .put("commandId", commandId)
+                .put("deviceCode", deviceCode)
+                .put("ok", ok)
+                .put("message", message)
+                .toString()
+        )
+    }
+
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT < 26) return
+        val channel = NotificationChannel(
+            CHANNEL_ID,
+            "LCD Agent",
+            NotificationManager.IMPORTANCE_LOW
+        )
+        getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+    }
+
+    private fun buildNotification(text: String): Notification {
+        val builder = if (Build.VERSION.SDK_INT >= 26) {
+            Notification.Builder(this, CHANNEL_ID)
+        } else {
+            @Suppress("DEPRECATION")
+            Notification.Builder(this)
+        }
+
+        return builder
+            .setContentTitle("LCD Agent")
+            .setContentText(text)
+            .setSmallIcon(android.R.drawable.presence_online)
+            .setOngoing(true)
+            .build()
+    }
+
+    private fun createAndStoreDeviceCode(): String {
+        val alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+        val random = SecureRandom()
+        val suffix = (1..6).map { alphabet[random.nextInt(alphabet.length)] }.joinToString("")
+        val code = "LCD-$suffix"
+        prefs.edit().putString(KEY_DEVICE_CODE, code).apply()
+        return code
+    }
+
+    private fun toWebSocketUrl(httpUrl: String): String {
+        val normalized = httpUrl.lowercase(Locale.US)
+        return when {
+            normalized.startsWith("https://") -> "wss://" + httpUrl.substringAfter("https://")
+            normalized.startsWith("http://") -> "ws://" + httpUrl.substringAfter("http://")
+            else -> "wss://$httpUrl"
+        }
+    }
+
+    companion object {
+        const val ACTION_START = "com.example.remiolike.client.START"
+        const val ACTION_STOP = "com.example.remiolike.client.STOP"
+        const val ACTION_SET_PROJECTION = "com.example.remiolike.client.SET_PROJECTION"
+        const val EXTRA_RESULT_CODE = "result_code"
+        const val EXTRA_PROJECTION_DATA = "projection_data"
+
+        private const val DEFAULT_RELAY_URL = "https://remote-4617.onrender.com"
+        private const val KEY_DEVICE_CODE = "device_code"
+        private const val CHANNEL_ID = "lcd_agent"
+        private const val NOTIFICATION_ID = 1001
+        private const val FRAME_INTERVAL_MS = 900L
+
+        @Volatile var isRunning = false
+        @Volatile var hasProjection = false
+    }
+}
