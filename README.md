@@ -67,7 +67,7 @@ Nac hien tai da co:
 - Android auto-fill `https://remote-4617.onrender.com`, tu ket noi Render relay va bao online.
 - Relay co `/dashboard.html` va `/devices` de PC xem LCD online.
 - PC Dashboard co lenh dieu khien co ban: `Identify` de hien thong bao tren LCD, `Open URL` de mo link tren LCD Agent.
-- PC Dashboard co `View` de xem anh man hinh LCD Agent qua frame JPEG WebSocket.
+- PC Dashboard co `View` de xem anh man hinh LCD Agent qua frame JPEG WebSocket kich thuoc nho de on dinh tren Render.
 - PC co the click len anh viewer de gui lenh tap ve LCD Agent.
 
 Quyen can bat tren Android:

@@ -168,6 +168,7 @@ input {
   place-items: center;
   padding: 16px;
   overflow: hidden;
+  position: relative;
 }
 
 .viewer-stage img {
@@ -177,6 +178,23 @@ input {
   border-radius: 8px;
   background: #050708;
   cursor: crosshair;
+}
+
+.viewer-stage img[hidden] {
+  display: none;
+}
+
+.viewer-status {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  right: 16px;
+  padding: 10px 12px;
+  border: 1px solid #2f3a46;
+  border-radius: 8px;
+  color: #c3ced8;
+  background: rgba(16, 24, 32, 0.92);
+  text-align: center;
 }
 
 .empty-state {

@@ -109,6 +109,7 @@ class MainActivity : Activity() {
             captureButton.text = "Screen View Enabled"
             setStatus("Screen view enabled")
             refreshPermissionStatus()
+            sendCommandResult(socket, "screen-permission", true, "Screen capture permission accepted")
             if (!isAccessibilityEnabled()) {
                 showAccessibilityHelp()
             }
@@ -442,6 +443,10 @@ class MainActivity : Activity() {
                 image.close()
             }
         }, captureHandler)
+
+        captureHandler?.postDelayed({
+            lastFrameAt = 0
+        }, 500)
     }
 
     private fun stopScreenCapture(keepProjection: Boolean = false) {
@@ -474,13 +479,13 @@ class MainActivity : Activity() {
         val cropped = Bitmap.createBitmap(bitmap, 0, 0, image.width, image.height)
         bitmap.recycle()
 
-        val targetWidth = 720
+        val targetWidth = 360
         val targetHeight = (targetWidth.toFloat() / cropped.width * cropped.height).toInt().coerceAtLeast(1)
         val scaled = Bitmap.createScaledBitmap(cropped, targetWidth, targetHeight, true)
         cropped.recycle()
 
         val output = ByteArrayOutputStream()
-        scaled.compress(Bitmap.CompressFormat.JPEG, 45, output)
+        scaled.compress(Bitmap.CompressFormat.JPEG, 25, output)
         scaled.recycle()
         return Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP)
     }
@@ -513,7 +518,9 @@ class MainActivity : Activity() {
         }.isSuccess
     }
 
-    private fun sendCommandResult(webSocket: WebSocket, commandId: String, ok: Boolean, message: String) {
+    private fun sendCommandResult(webSocket: WebSocket?, commandId: String, ok: Boolean, message: String) {
+        if (webSocket == null) return
+
         val payload = JSONObject()
             .put("type", "command-result")
             .put("commandId", commandId)

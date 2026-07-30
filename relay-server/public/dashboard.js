@@ -5,8 +5,10 @@ const viewerPanel = document.querySelector("#viewerPanel");
 const viewerTitle = document.querySelector("#viewerTitle");
 const closeViewer = document.querySelector("#closeViewer");
 const screenImage = document.querySelector("#screenImage");
+const viewerStatus = document.querySelector("#viewerStatus");
 let socket;
 let activeDeviceCode = "";
+let lastFrameTime = 0;
 
 function connectDashboard() {
   const protocol = location.protocol === "https:" ? "wss:" : "ws:";
@@ -24,11 +26,16 @@ function connectDashboard() {
     }
     if (message.type === "command-result") {
       commandStatus.textContent = `${message.deviceCode}: ${message.ok ? "OK" : "Failed"} - ${message.message || ""}`;
+      if (message.deviceCode === activeDeviceCode) {
+        viewerStatus.textContent = message.message || "Waiting for screen frame...";
+      }
     }
     if (message.type === "screen-frame" && message.deviceCode === activeDeviceCode) {
-      screenImage.src = `data:image/jpeg;base64,${message.frame}`;
+      lastFrameTime = Date.now();
+      viewerStatus.textContent = "Receiving screen...";
       screenImage.dataset.frameWidth = message.width || "";
       screenImage.dataset.frameHeight = message.height || "";
+      screenImage.src = `data:image/jpeg;base64,${message.frame}`;
     }
   });
 
@@ -93,6 +100,8 @@ function openViewer(deviceCode) {
   activeDeviceCode = deviceCode;
   viewerTitle.textContent = `${deviceCode} Viewer`;
   screenImage.removeAttribute("src");
+  screenImage.hidden = true;
+  viewerStatus.textContent = "Waiting for Android screen permission...";
   viewerPanel.hidden = false;
   commandStatus.textContent = `${deviceCode}: starting screen view...`;
   socket.send(JSON.stringify({ type: "watch-device", deviceCode }));
@@ -122,6 +131,19 @@ closeViewer.addEventListener("click", () => {
   activeDeviceCode = "";
   viewerPanel.hidden = true;
   screenImage.removeAttribute("src");
+  screenImage.hidden = true;
+});
+
+screenImage.addEventListener("load", () => {
+  if (activeDeviceCode) {
+    screenImage.hidden = false;
+    viewerStatus.textContent = `Last frame: ${new Date(lastFrameTime).toLocaleTimeString()}`;
+  }
+});
+
+screenImage.addEventListener("error", () => {
+  screenImage.hidden = true;
+  viewerStatus.textContent = "Frame received but image decode failed. Waiting for next frame...";
 });
 
 screenImage.addEventListener("click", (event) => {
