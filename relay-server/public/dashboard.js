@@ -4,6 +4,7 @@ const commandStatus = document.querySelector("#commandStatus");
 const viewerPanel = document.querySelector("#viewerPanel");
 const viewerTitle = document.querySelector("#viewerTitle");
 const closeViewer = document.querySelector("#closeViewer");
+const webrtcButton = document.querySelector("#webrtcButton");
 const backButton = document.querySelector("#backButton");
 const homeButton = document.querySelector("#homeButton");
 const recentsButton = document.querySelector("#recentsButton");
@@ -48,8 +49,7 @@ function connectDashboard() {
           viewerStatus.textContent = "Permission accepted. Starting screen stream...";
           window.setTimeout(() => {
             if (activeDeviceCode === message.deviceCode && screenVideo.hidden) {
-              sendAgentCommand(activeDeviceCode, { type: "start-webrtc" });
-              scheduleJpegFallback(activeDeviceCode);
+              sendAgentCommand(activeDeviceCode, { type: "start-screen" });
             }
           }, 500);
         }
@@ -139,12 +139,11 @@ function openViewer(deviceCode) {
   screenVideo.hidden = true;
   screenImage.removeAttribute("src");
   screenImage.hidden = true;
-  viewerStatus.textContent = "Starting WebRTC screen stream...";
+  viewerStatus.textContent = "Starting screen stream...";
   viewerPanel.hidden = false;
   commandStatus.textContent = `${deviceCode}: starting screen view...`;
   socket.send(JSON.stringify({ type: "watch-device", deviceCode }));
-  sendAgentCommand(deviceCode, { type: "start-webrtc" });
-  scheduleJpegFallback(deviceCode);
+  sendAgentCommand(deviceCode, { type: "start-screen" });
 }
 
 function scheduleJpegFallback(deviceCode) {
@@ -198,6 +197,15 @@ homeButton.addEventListener("click", () => {
 
 recentsButton.addEventListener("click", () => {
   if (activeDeviceCode) sendAgentCommand(activeDeviceCode, { type: "recents" });
+});
+
+webrtcButton.addEventListener("click", () => {
+  if (!activeDeviceCode) return;
+  screenImage.hidden = true;
+  viewerStatus.textContent = "Trying WebRTC screen stream...";
+  sendAgentCommand(activeDeviceCode, { type: "stop-screen" });
+  sendAgentCommand(activeDeviceCode, { type: "start-webrtc" });
+  scheduleJpegFallback(activeDeviceCode);
 });
 
 screenImage.addEventListener("load", () => {
