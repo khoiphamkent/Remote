@@ -63,7 +63,9 @@ wss.on("connection", (socket) => {
             deviceCode: sessionId,
             socket,
             lastSeen: Date.now(),
-            accessibilityEnabled: Boolean(message.accessibilityEnabled)
+            accessibilityEnabled: Boolean(message.accessibilityEnabled),
+            rootCaptureAvailable: Boolean(message.rootCaptureAvailable),
+            captureMode: message.captureMode || "None"
           });
           socket.send(JSON.stringify({ type: "registered", sessionId, role, iceServers: ICE_SERVERS }));
           broadcastDevices();
@@ -92,6 +94,8 @@ wss.on("connection", (socket) => {
         if (agent) {
           agent.lastSeen = Date.now();
           agent.accessibilityEnabled = Boolean(message.accessibilityEnabled);
+          agent.rootCaptureAvailable = Boolean(message.rootCaptureAvailable);
+          agent.captureMode = message.captureMode || agent.captureMode || "None";
           broadcastDevices();
         }
         return;
@@ -195,15 +199,25 @@ function getDeviceList() {
       deviceCode: agent.deviceCode,
       online: agent.socket.readyState === WebSocket.OPEN,
       lastSeen: agent.lastSeen,
-      accessibilityEnabled: Boolean(agent.accessibilityEnabled)
+      accessibilityEnabled: Boolean(agent.accessibilityEnabled),
+      rootCaptureAvailable: Boolean(agent.rootCaptureAvailable),
+      captureMode: agent.captureMode || "None"
     }))
     .sort((a, b) => a.deviceCode.localeCompare(b.deviceCode));
 }
 
 function updateAgentFromStatusMessage(deviceCode, message) {
   const agent = agents.get(deviceCode);
-  if (!agent || typeof message.accessibilityEnabled === "undefined") return;
-  agent.accessibilityEnabled = Boolean(message.accessibilityEnabled);
+  if (!agent) return;
+  if (typeof message.accessibilityEnabled !== "undefined") {
+    agent.accessibilityEnabled = Boolean(message.accessibilityEnabled);
+  }
+  if (typeof message.rootCaptureAvailable !== "undefined") {
+    agent.rootCaptureAvailable = Boolean(message.rootCaptureAvailable);
+  }
+  if (typeof message.captureMode !== "undefined") {
+    agent.captureMode = message.captureMode || "None";
+  }
   agent.lastSeen = Date.now();
 }
 

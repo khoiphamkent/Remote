@@ -297,7 +297,9 @@ class MainActivity : Activity() {
             else -> "Screen view: needs one-time accept"
         }
         val tap = if (isAccessibilityEnabled()) "Remote control: enabled" else "Remote control: needs Accessibility"
-        permissionStatusText.text = "$service\n$relay\n$kiosk\n$screen\n$tap\nDevice: $deviceCode"
+        val root = if (LcdAgentService.rootCaptureAvailable) "Root capture: available" else "Root capture: not active"
+        val capture = "Capture mode: ${LcdAgentService.captureMode}"
+        permissionStatusText.text = "$service\n$relay\n$kiosk\n$screen\n$root\n$capture\n$tap\nDevice: $deviceCode"
     }
 
     private fun isAccessibilityEnabled(): Boolean {

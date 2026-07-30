@@ -106,7 +106,7 @@ input {
 
 .device-card {
   display: grid;
-  grid-template-columns: 1fr auto auto auto auto auto;
+  grid-template-columns: 1fr auto auto auto auto auto auto;
   align-items: center;
   gap: 16px;
   padding: 16px;

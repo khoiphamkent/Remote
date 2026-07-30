@@ -8,6 +8,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.PixelFormat
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
@@ -51,6 +52,8 @@ class LcdAgentService : Service() {
     private var captureThread: HandlerThread? = null
     private var captureHandler: Handler? = null
     private var captureActive = false
+    private var rootCaptureThread: Thread? = null
+    private var rootCaptureActive = false
     private var lastFrameAt = 0L
     private var screenWidth = 0
     private var screenHeight = 0
@@ -213,13 +216,21 @@ class LcdAgentService : Service() {
                 val ok = openAccessibilitySettings()
                 sendCommandResult(commandId, ok, if (ok) "Accessibility settings opened on LCD" else "Could not open Accessibility settings")
             }
+            "enable-control" -> {
+                val ok = isAccessibilityEnabled() || enableAccessibilityWithRoot()
+                if (!ok) openAccessibilitySettings()
+                sendCommandResult(commandId, ok, if (ok) "Accessibility service is enabled" else "Open Accessibility on LCD and enable LCD Agent")
+            }
             "accessibility-status" -> {
                 val ok = isAccessibilityEnabled()
                 sendCommandResult(commandId, ok, if (ok) "Accessibility service is enabled" else "Accessibility service is not enabled")
             }
             "start-screen" -> {
                 captureActive = true
-                if (mediaProjection == null) {
+                val rootStarted = startRootCaptureSafely()
+                if (rootStarted) {
+                    sendCommandResult(commandId, true, "Root screen stream started")
+                } else if (mediaProjection == null) {
                     sendCommandResult(commandId, false, "Open LCD Agent and accept screen sharing permission")
                 } else {
                     val ok = startScreenCaptureSafely()
@@ -233,7 +244,10 @@ class LcdAgentService : Service() {
             }
             "start-webrtc" -> {
                 captureActive = true
-                if (mediaProjection == null) {
+                val rootStarted = startRootCaptureSafely()
+                if (rootStarted) {
+                    sendCommandResult(commandId, true, "Root screen stream started")
+                } else if (mediaProjection == null) {
                     sendCommandResult(commandId, false, "Open LCD Agent and accept screen sharing permission")
                 } else {
                     val ok = startScreenCaptureSafely()
@@ -281,9 +295,65 @@ class LcdAgentService : Service() {
         }.getOrDefault(false)
     }
 
+    private fun startRootCaptureSafely(): Boolean {
+        if (rootCaptureThread?.isAlive == true) return true
+        if (!hasRootScreencap()) {
+            rootCaptureAvailable = false
+            captureMode = if (mediaProjection != null) "MediaProjection" else "None"
+            return false
+        }
+
+        rootCaptureAvailable = true
+        captureMode = "Root"
+        rootCaptureActive = true
+        rootCaptureThread = Thread {
+            while (rootCaptureActive && !Thread.currentThread().isInterrupted) {
+                val startedAt = System.currentTimeMillis()
+                val sent = runCatching {
+                    val png = captureRootScreenshotBytes()
+                    val bitmap = BitmapFactory.decodeByteArray(png, 0, png.size) ?: return@runCatching false
+                    screenWidth = bitmap.width
+                    screenHeight = bitmap.height
+                    val frame = encodeBitmap(bitmap)
+                    bitmap.recycle()
+                    if (frame != null) {
+                        sendScreenFrame(frame)
+                        true
+                    } else {
+                        false
+                    }
+                }.getOrDefault(false)
+
+                if (!sent) {
+                    rootCaptureAvailable = false
+                    captureMode = if (mediaProjection != null) "MediaProjection" else "None"
+                    rootCaptureActive = false
+                    return@Thread
+                }
+
+                val elapsed = System.currentTimeMillis() - startedAt
+                val sleepMs = (ROOT_FRAME_INTERVAL_MS - elapsed).coerceAtLeast(20L)
+                try {
+                    Thread.sleep(sleepMs)
+                } catch (_: InterruptedException) {
+                    return@Thread
+                }
+            }
+        }.also { it.start() }
+        return true
+    }
+
+    private fun hasRootScreencap(): Boolean {
+        return runCatching {
+            val output = runRootCommandBytes("id", ROOT_COMMAND_TIMEOUT_MS)
+            output.decodeToString().contains("uid=0")
+        }.getOrDefault(false)
+    }
+
     private fun startScreenCapture() {
         val projection = mediaProjection ?: return
         if (virtualDisplay != null) return
+        captureMode = "MediaProjection"
 
         val metrics = resources.displayMetrics
         screenWidth = metrics.widthPixels
@@ -329,6 +399,10 @@ class LcdAgentService : Service() {
     }
 
     private fun stopScreenCapture(keepProjection: Boolean = false) {
+        rootCaptureActive = false
+        rootCaptureThread?.interrupt()
+        rootCaptureThread = null
+
         virtualDisplay?.release()
         virtualDisplay = null
         imageReader?.close()
@@ -341,6 +415,10 @@ class LcdAgentService : Service() {
             mediaProjection?.stop()
             mediaProjection = null
             hasProjection = false
+        }
+
+        if (!rootCaptureActive && virtualDisplay == null) {
+            captureMode = if (mediaProjection != null) "MediaProjection" else "None"
         }
     }
 
@@ -357,13 +435,17 @@ class LcdAgentService : Service() {
         val cropped = Bitmap.createBitmap(bitmap, 0, 0, image.width, image.height)
         bitmap.recycle()
 
-        val targetWidth = 560
-        val targetHeight = (targetWidth.toFloat() / cropped.width * cropped.height).toInt().coerceAtLeast(1)
-        val scaled = Bitmap.createScaledBitmap(cropped, targetWidth, targetHeight, true)
-        cropped.recycle()
+        return encodeBitmap(cropped).also {
+            cropped.recycle()
+        }
+    }
 
+    private fun encodeBitmap(bitmap: Bitmap): String? {
+        val targetWidth = ROOT_TARGET_WIDTH.coerceAtMost(bitmap.width).coerceAtLeast(1)
+        val targetHeight = (targetWidth.toFloat() / bitmap.width * bitmap.height).toInt().coerceAtLeast(1)
+        val scaled = Bitmap.createScaledBitmap(bitmap, targetWidth, targetHeight, true)
         val output = ByteArrayOutputStream()
-        scaled.compress(Bitmap.CompressFormat.JPEG, 45, output)
+        scaled.compress(Bitmap.CompressFormat.JPEG, ROOT_JPEG_QUALITY, output)
         scaled.recycle()
         return Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP)
     }
@@ -424,6 +506,42 @@ class LcdAgentService : Service() {
         }.isSuccess
     }
 
+    private fun enableAccessibilityWithRoot(): Boolean {
+        val services = desiredAccessibilityServices()
+        val enabledWithSystemPermission = runCatching {
+            Settings.Secure.putString(
+                contentResolver,
+                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
+                services
+            )
+            Settings.Secure.putInt(contentResolver, Settings.Secure.ACCESSIBILITY_ENABLED, 1)
+            isAccessibilityEnabled()
+        }.getOrDefault(false)
+        if (enabledWithSystemPermission) return true
+
+        return runCatching {
+            val escapedServices = services.replace("'", "'\\''")
+            runRootCommandBytes(
+                "settings put secure enabled_accessibility_services '$escapedServices'; settings put secure accessibility_enabled 1",
+                ROOT_COMMAND_TIMEOUT_MS
+            )
+            isAccessibilityEnabled()
+        }.getOrDefault(false)
+    }
+
+    private fun desiredAccessibilityServices(): String {
+        val service = ComponentName(this, LcdAccessibilityService::class.java).flattenToString()
+        val current = Settings.Secure.getString(
+            contentResolver,
+            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+        ).orEmpty()
+        val entries = current.split(":").filter { it.isNotBlank() }.toMutableList()
+        if (entries.none { it.equals(service, ignoreCase = true) }) {
+            entries.add(service)
+        }
+        return entries.joinToString(":")
+    }
+
     private fun isAccessibilityEnabled(): Boolean {
         val expected = ComponentName(this, LcdAccessibilityService::class.java).flattenToString()
         val enabledServices = Settings.Secure.getString(
@@ -441,6 +559,8 @@ class LcdAgentService : Service() {
             .put("sessionId", deviceCode)
             .put("deviceCode", deviceCode)
             .put("accessibilityEnabled", isAccessibilityEnabled())
+            .put("rootCaptureAvailable", rootCaptureAvailable)
+            .put("captureMode", captureMode)
             .toString()
     }
 
@@ -453,8 +573,32 @@ class LcdAgentService : Service() {
                 .put("ok", ok)
                 .put("message", message)
                 .put("accessibilityEnabled", isAccessibilityEnabled())
+                .put("rootCaptureAvailable", rootCaptureAvailable)
+                .put("captureMode", captureMode)
                 .toString()
         )
+    }
+
+    private fun runRootCommandBytes(command: String, timeoutMs: Long): ByteArray {
+        val process = Runtime.getRuntime().exec(arrayOf("su", "-c", command))
+        val finished = process.waitFor(timeoutMs, TimeUnit.MILLISECONDS)
+        if (!finished) {
+            process.destroyForcibly()
+            throw IllegalStateException("Root command timed out")
+        }
+        val output = process.inputStream.readBytes()
+        if (process.exitValue() != 0) {
+            val error = process.errorStream.readBytes().decodeToString()
+            throw IllegalStateException(error.ifBlank { "Root command failed" })
+        }
+        return output
+    }
+
+    private fun captureRootScreenshotBytes(): ByteArray {
+        val target = "${cacheDir.absolutePath}/lcd-root-screen.png"
+        val quoted = "'${target.replace("'", "'\\''")}'"
+        runRootCommandBytes("screencap -p $quoted; chmod 600 $quoted", ROOT_COMMAND_TIMEOUT_MS)
+        return java.io.File(target).readBytes()
     }
 
     private fun createNotificationChannel() {
@@ -513,9 +657,15 @@ class LcdAgentService : Service() {
         private const val CHANNEL_ID = "lcd_agent"
         private const val NOTIFICATION_ID = 1001
         private const val FRAME_INTERVAL_MS = 180L
+        private const val ROOT_FRAME_INTERVAL_MS = 220L
+        private const val ROOT_COMMAND_TIMEOUT_MS = 5000L
+        private const val ROOT_TARGET_WIDTH = 640
+        private const val ROOT_JPEG_QUALITY = 48
 
         @Volatile var isRunning = false
         @Volatile var hasProjection = false
         @Volatile var connectionStatus = "Relay: stopped"
+        @Volatile var rootCaptureAvailable = false
+        @Volatile var captureMode = "None"
     }
 }

@@ -19,7 +19,7 @@ Bo project nay la starter kit de quan ly Android gan sau man LCD:
 
 - Android Studio.
 - JDK 17.
-- Android SDK voi `minSdk 23`, `targetSdk 35`.
+- Android SDK voi `minSdk 23`. Ban debug stable hien tai target `targetSdk 33` de giam rui ro foreground-service khi cai noi bo.
 
 ## Chay khac Wi-Fi qua relay
 
@@ -66,9 +66,10 @@ Nac hien tai da co:
 - Code hien lan dau de nguoi lap dat ghi lai, khong co o sua code.
 - Android auto-fill `https://remote-4617.onrender.com`, tu ket noi Render relay va bao online.
 - Relay co `/dashboard.html` va `/devices` de PC xem LCD online.
-- PC Dashboard co lenh dieu khien co ban: `Identify` de hien thong bao tren LCD, `Open URL` de mo link tren LCD Agent.
-- PC Dashboard co `View` de xem man hinh LCD Agent. Dashboard uu tien WebRTC video cho latency thap/FPS cao, va fallback ve JPEG WebSocket neu WebRTC khong bat tay duoc.
+- PC Dashboard co `Edit` de dat ten de nho cho tung LCD theo ma `LCD-XXXXXX`.
+- PC Dashboard co `View` de xem man hinh LCD Agent qua JPEG WebSocket stable.
 - PC co the tap, swipe, Back, Home, Recents tren LCD Agent neu Accessibility da duoc bat.
+- Tren thiet bi root/managed firmware, Android Agent uu tien `Root Capture` bang `su -c screencap -p` de xem man hinh khong can popup `Chia se toan bo man hinh`.
 - Android Agent chay bang foreground service nen van online khi bam Home/Back neu he thong khong kill service.
 - Android Agent tu khoi dong lai service khi boot/may cai update. Neu app la Device Owner, app tu mo lai va vao kiosk/lock-task.
 - Kiosk mode: khi duoc set Device Owner, LCD Agent allowlist lock-task, khoa status bar/keyguard neu thiet bi ho tro, va khong cho nguoi dung thoat app bang thao tac thuong.
@@ -78,7 +79,7 @@ Quyen can bat tren Android:
 - Khi mo app, Android Agent tu xin quyen share/capture screen. Nguoi lap dat chi can dong y.
 - De dieu khien tu PC co tac dung tren Android, app se mo huong dan Accessibility. Neu Android bao app bi han che, vao App settings -> menu top-right -> `Allow restricted settings`, sau do vao Accessibility -> LCD Agent -> bat service.
 - Android khong cho APK thuong bo qua popup `Chia se toan bo man hinh`. Popup nay phai accept it nhat mot lan sau moi lan reboot/kill projection. Device Owner/kiosk giup app luon song va nguoi dung khong thoat, nhung khong bypass duoc MediaProjection prompt tren Android goc.
-- WebRTC khac Wi-Fi co the can TURN server. Render relay chi relay signaling; neu NAT kho, hay cau hinh `ICE_SERVERS_JSON` co TURN.
+- Neu thiet bi da root va LCD Agent duoc grant `su`, dashboard `View` se thu root capture truoc. Khi thanh cong, dashboard hien `Capture: Root` va khong can popup share man hinh.
 
 ## Device Owner / Kiosk
 
@@ -99,6 +100,42 @@ Sau do tren LCD:
 5. Bat Accessibility `LCD Agent` neu can dieu khien tap/swipe/back/home.
 
 Neu `dpm set-device-owner` bao loi do may da co account/owner, can factory reset hoac dung MDM/OEM enrollment.
+
+## Root / Firmware Capture
+
+Huong nay danh cho Android box/tablet do ban so huu va quan ly.
+
+### Rooted Android box
+
+1. Cai APK moi.
+2. Mo LCD Agent va de `Relay: connected`.
+3. Tren PC Dashboard bam `View`.
+4. Neu Magisk/SuperSU hoi quyen `su`, chon grant/allow forever.
+5. Dashboard se hien `Capture: Root` khi thanh cong. Tu luc do xem man hinh khong can popup `Chia se toan bo man hinh`.
+
+Nut `Enable Control` se thu bat Accessibility bang root. Neu root khong cho sua secure settings, app se mo man Accessibility de bat tay.
+
+### Custom firmware / priv-app
+
+File mau nam tai:
+
+```text
+android-client/privileged/privapp-permissions-com.example.remiolike.client.xml
+android-client/privileged/README.md
+```
+
+Lenh mau:
+
+```powershell
+adb root
+adb remount
+adb shell mkdir -p /system/priv-app/LcdAgent
+adb push android-client\app\build\outputs\apk\debug\app-debug.apk /system/priv-app/LcdAgent/LcdAgent.apk
+adb push android-client\privileged\privapp-permissions-com.example.remiolike.client.xml /system/etc/permissions/
+adb shell chmod 0644 /system/priv-app/LcdAgent/LcdAgent.apk
+adb shell chmod 0644 /system/etc/permissions/privapp-permissions-com.example.remiolike.client.xml
+adb reboot
+```
 
 ## Chay PC Dashboard
 
@@ -144,7 +181,8 @@ Ban build hien tai chua ky code certificate, nen Windows SmartScreen co the can 
 - PC Dashboard mo dashboard LCD mac dinh.
 - Android Agent tu tao ma LCD co dinh va bao online.
 - Relay server quan ly danh sach LCD online/offline.
-- WebRTC stream + JPEG fallback.
+- JPEG stable stream.
+- Root capture mode cho thiet bi rooted/managed firmware de bo popup share man hinh.
 - Remote tap/swipe/back/home/recents qua Accessibility.
 - Foreground service + boot receiver + Device Owner kiosk hooks.
 

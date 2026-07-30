@@ -52,7 +52,9 @@ function connectDashboard() {
           const current = devicesByCode.get(message.deviceCode) || { deviceCode: message.deviceCode, online: true };
           devicesByCode.set(message.deviceCode, {
             ...current,
-            accessibilityEnabled: Boolean(message.accessibilityEnabled)
+            accessibilityEnabled: Boolean(message.accessibilityEnabled),
+            rootCaptureAvailable: Boolean(message.rootCaptureAvailable),
+            captureMode: message.captureMode || current.captureMode || "None"
           });
           refreshViewerControls();
         }
@@ -117,10 +119,14 @@ function renderDevices(devices) {
     control.className = device.accessibilityEnabled ? "device-status online" : "device-status warning";
     control.textContent = device.accessibilityEnabled ? "Control: Enabled" : "Control: Needs Accessibility";
 
+    const capture = document.createElement("span");
+    capture.className = device.captureMode === "Root" ? "device-status online" : "device-status";
+    capture.textContent = `Capture: ${device.captureMode || "None"}`;
+
     const enableControl = document.createElement("button");
     enableControl.className = "button secondary-button";
     enableControl.textContent = "Enable Control";
-    enableControl.onclick = () => sendAgentCommand(device.deviceCode, { type: "open-accessibility" });
+    enableControl.onclick = () => sendAgentCommand(device.deviceCode, { type: "enable-control" });
     enableControl.hidden = Boolean(device.accessibilityEnabled);
 
     const edit = document.createElement("button");
@@ -136,6 +142,7 @@ function renderDevices(devices) {
     row.appendChild(titleGroup);
     row.appendChild(status);
     row.appendChild(control);
+    row.appendChild(capture);
     row.appendChild(enableControl);
     row.appendChild(edit);
     row.appendChild(action);
@@ -253,7 +260,7 @@ recentsButton.addEventListener("click", () => {
 });
 
 enableControlButton.addEventListener("click", () => {
-  if (activeDeviceCode) sendAgentCommand(activeDeviceCode, { type: "open-accessibility" });
+  if (activeDeviceCode) sendAgentCommand(activeDeviceCode, { type: "enable-control" });
 });
 
 saveEditButton.addEventListener("click", saveEditLabel);
