@@ -66,6 +66,7 @@ Nac hien tai da co:
 - Code hien lan dau de nguoi lap dat ghi lai, khong co o sua code.
 - Android auto-fill `https://remote-4617.onrender.com`, tu ket noi Render relay va bao online.
 - Relay co `/dashboard.html` va `/devices` de PC xem LCD online.
+- PC Dashboard co lenh dieu khien co ban: `Identify` de hien thong bao tren LCD, `Open URL` de mo link tren LCD Agent.
 
 Nac tiep theo can lam:
 

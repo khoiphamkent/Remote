@@ -97,9 +97,16 @@ input {
   padding: 24px;
 }
 
+.command-bar {
+  padding: 12px 24px;
+  border-bottom: 1px solid #2a3541;
+  color: #c3ced8;
+  background: #101820;
+}
+
 .device-card {
   display: grid;
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: 1fr auto auto auto auto;
   align-items: center;
   gap: 16px;
   padding: 16px;
@@ -119,6 +126,11 @@ input {
 
 .device-status.online {
   color: #7bdcb5;
+}
+
+.secondary-button {
+  background: #324150;
+  color: #eef3f7;
 }
 
 .empty-state {

@@ -89,6 +89,16 @@ wss.on("connection", (socket) => {
         return;
       }
 
+      if (role === "dashboard" && message.type === "agent-command") {
+        forwardAgentCommand(socket, message);
+        return;
+      }
+
+      if (role === "agent" && message.type === "command-result") {
+        broadcastDashboards(message);
+        return;
+      }
+
       const room = rooms.get(sessionId);
     const target = role === "host" ? room?.client : room?.host;
     if (target && target.readyState === WebSocket.OPEN) {
@@ -155,6 +165,40 @@ function getDeviceList() {
 
 function broadcastDevices() {
   const payload = JSON.stringify({ type: "devices", devices: getDeviceList() });
+  for (const socket of dashboards) {
+    if (socket.readyState === WebSocket.OPEN) {
+      socket.send(payload);
+    }
+  }
+}
+
+function forwardAgentCommand(sourceSocket, message) {
+  const deviceCode = String(message.deviceCode || "").trim().toUpperCase();
+  const agent = agents.get(deviceCode);
+  const command = message.command || {};
+  const commandId = message.commandId || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+  if (!agent || agent.socket.readyState !== WebSocket.OPEN) {
+    sourceSocket.send(JSON.stringify({
+      type: "command-result",
+      commandId,
+      deviceCode,
+      ok: false,
+      message: "LCD agent is offline"
+    }));
+    return;
+  }
+
+  agent.socket.send(JSON.stringify({
+    type: "agent-command",
+    commandId,
+    deviceCode,
+    command
+  }));
+}
+
+function broadcastDashboards(message) {
+  const payload = JSON.stringify(message);
   for (const socket of dashboards) {
     if (socket.readyState === WebSocket.OPEN) {
       socket.send(payload);
