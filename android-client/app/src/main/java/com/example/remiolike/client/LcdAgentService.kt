@@ -77,6 +77,7 @@ class LcdAgentService : Service() {
     private var surfaceTextureHelper: SurfaceTextureHelper? = null
     private var videoSource: VideoSource? = null
     private var videoTrack: VideoTrack? = null
+    private var pendingWebRtcStart = false
     private var rtcIceServers = listOf(
         PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer()
     )
@@ -116,6 +117,14 @@ class LcdAgentService : Service() {
                     projectionData = Intent(data)
                     hasProjection = true
                     sendCommandResult("screen-permission", true, "Screen capture permission accepted")
+                    if (pendingWebRtcStart) {
+                        mainHandler.postDelayed({
+                            val ok = startWebRtcStream()
+                            sendWebRtcState(if (ok) "WebRTC screen stream started" else "WebRTC could not start")
+                        }, 300)
+                    } else if (captureActive) {
+                        mainHandler.post { startScreenCapture() }
+                    }
                 }
             }
             ACTION_STOP -> stopSelf()
@@ -231,12 +240,14 @@ class LcdAgentService : Service() {
                 }
             }
             "start-webrtc" -> {
+                pendingWebRtcStart = true
                 captureActive = false
                 stopScreenCapture(keepProjection = false)
                 val ok = startWebRtcStream()
                 sendCommandResult(commandId, ok, if (ok) "WebRTC screen stream started" else "Open LCD Agent and accept screen sharing permission")
             }
             "stop-webrtc" -> {
+                pendingWebRtcStart = false
                 stopWebRtcStream()
                 sendCommandResult(commandId, true, "WebRTC screen stream stopped")
             }
@@ -371,6 +382,7 @@ class LcdAgentService : Service() {
         val factory = peerConnectionFactory ?: return false
         val data = projectionData ?: return false
 
+        pendingWebRtcStart = false
         stopWebRtcStream()
         val rtcConfig = PeerConnection.RTCConfiguration(rtcIceServers).apply {
             sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN

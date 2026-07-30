@@ -43,6 +43,15 @@ function connectDashboard() {
       commandStatus.textContent = `${message.deviceCode}: ${message.ok ? "OK" : "Failed"} - ${message.message || ""}`;
       if (message.deviceCode === activeDeviceCode) {
         viewerStatus.textContent = message.message || "Waiting for screen frame...";
+        if (message.ok && message.message === "Screen capture permission accepted") {
+          window.clearTimeout(fallbackTimer);
+          viewerStatus.textContent = "Permission accepted. Starting screen stream...";
+          window.setTimeout(() => {
+            if (activeDeviceCode === message.deviceCode && screenVideo.hidden) {
+              sendAgentCommand(activeDeviceCode, { type: "start-webrtc" });
+            }
+          }, 500);
+        }
       }
     }
     if (message.type === "screen-frame" && message.deviceCode === activeDeviceCode) {
