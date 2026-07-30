@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">LCD Agent</string>
+    <string name="accessibility_service_description">Allows LCD Dashboard to send tap commands to this managed LCD device.</string>
+</resources>

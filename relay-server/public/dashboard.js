@@ -1,7 +1,12 @@
 const deviceList = document.querySelector("#deviceList");
 const dashboardStatus = document.querySelector("#dashboardStatus");
 const commandStatus = document.querySelector("#commandStatus");
+const viewerPanel = document.querySelector("#viewerPanel");
+const viewerTitle = document.querySelector("#viewerTitle");
+const closeViewer = document.querySelector("#closeViewer");
+const screenImage = document.querySelector("#screenImage");
 let socket;
+let activeDeviceCode = "";
 
 function connectDashboard() {
   const protocol = location.protocol === "https:" ? "wss:" : "ws:";
@@ -19,6 +24,11 @@ function connectDashboard() {
     }
     if (message.type === "command-result") {
       commandStatus.textContent = `${message.deviceCode}: ${message.ok ? "OK" : "Failed"} - ${message.message || ""}`;
+    }
+    if (message.type === "screen-frame" && message.deviceCode === activeDeviceCode) {
+      screenImage.src = `data:image/jpeg;base64,${message.frame}`;
+      screenImage.dataset.frameWidth = message.width || "";
+      screenImage.dataset.frameHeight = message.height || "";
     }
   });
 
@@ -53,8 +63,7 @@ function renderDevices(devices) {
     const action = document.createElement("button");
     action.className = "button";
     action.textContent = "View";
-    action.disabled = true;
-    action.title = "Screen viewing will be added in phase 2.";
+    action.onclick = () => openViewer(device.deviceCode);
 
     const identify = document.createElement("button");
     identify.className = "button secondary-button";
@@ -80,6 +89,16 @@ function renderDevices(devices) {
   }
 }
 
+function openViewer(deviceCode) {
+  activeDeviceCode = deviceCode;
+  viewerTitle.textContent = `${deviceCode} Viewer`;
+  screenImage.removeAttribute("src");
+  viewerPanel.hidden = false;
+  commandStatus.textContent = `${deviceCode}: starting screen view...`;
+  socket.send(JSON.stringify({ type: "watch-device", deviceCode }));
+  sendAgentCommand(deviceCode, { type: "start-screen" });
+}
+
 function sendAgentCommand(deviceCode, command) {
   if (!socket || socket.readyState !== WebSocket.OPEN) {
     commandStatus.textContent = "Dashboard is disconnected.";
@@ -95,5 +114,23 @@ function sendAgentCommand(deviceCode, command) {
     command
   }));
 }
+
+closeViewer.addEventListener("click", () => {
+  if (activeDeviceCode) {
+    sendAgentCommand(activeDeviceCode, { type: "stop-screen" });
+  }
+  activeDeviceCode = "";
+  viewerPanel.hidden = true;
+  screenImage.removeAttribute("src");
+});
+
+screenImage.addEventListener("click", (event) => {
+  if (!activeDeviceCode || !screenImage.src) return;
+
+  const rect = screenImage.getBoundingClientRect();
+  const x = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+  const y = Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height));
+  sendAgentCommand(activeDeviceCode, { type: "tap", x, y });
+});
 
 connectDashboard();

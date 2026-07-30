@@ -67,12 +67,18 @@ Nac hien tai da co:
 - Android auto-fill `https://remote-4617.onrender.com`, tu ket noi Render relay va bao online.
 - Relay co `/dashboard.html` va `/devices` de PC xem LCD online.
 - PC Dashboard co lenh dieu khien co ban: `Identify` de hien thong bao tren LCD, `Open URL` de mo link tren LCD Agent.
+- PC Dashboard co `View` de xem anh man hinh LCD Agent qua frame JPEG WebSocket.
+- PC co the click len anh viewer de gui lenh tap ve LCD Agent.
+
+Quyen can bat tren Android:
+
+- Khi PC bam `View`, Android se hien prompt share/capture screen. Nguoi lap dat can dong y.
+- De click/tap tu PC co tac dung tren Android, vao Android `Settings` -> `Accessibility` -> `LCD Agent` -> bat service.
 
 Nac tiep theo can lam:
 
-- Android xin quyen capture man hinh bang MediaProjection.
-- Android stream man hinh len PC viewer bang WebRTC.
 - Chay nen bang foreground service/kiosk mode.
+- Nang cap stream tu JPEG frame sang WebRTC neu can FPS cao/latency thap.
 
 ## Chay PC Dashboard
 
@@ -121,8 +127,7 @@ Ban build hien tai chua ky code certificate, nen Windows SmartScreen co the can 
 
 ## Viec can lam tiep
 
-- Android xin quyen capture man hinh bang MediaProjection.
-- Android stream man hinh len PC viewer bang WebRTC.
 - Chay nen bang foreground service/kiosk mode.
-- Deploy relay server voi HTTPS/WSS va TURN server neu can stream on dinh.
+- Nang cap stream tu JPEG frame sang WebRTC neu can FPS cao/latency thap.
+- Deploy relay server voi HTTPS/WSS va TURN server neu can WebRTC stream on dinh.
 - Build APK/AAB signed release.

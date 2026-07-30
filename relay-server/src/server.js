@@ -12,6 +12,7 @@ const wss = new WebSocket.Server({ server });
 const rooms = new Map();
 const agents = new Map();
 const dashboards = new Set();
+const viewersByDevice = new Map();
 
 app.use(express.static(path.join(__dirname, "..", "public")));
 
@@ -89,8 +90,18 @@ wss.on("connection", (socket) => {
         return;
       }
 
+      if (role === "dashboard" && message.type === "watch-device") {
+        watchDevice(socket, message.deviceCode);
+        return;
+      }
+
       if (role === "dashboard" && message.type === "agent-command") {
         forwardAgentCommand(socket, message);
+        return;
+      }
+
+      if (role === "agent" && message.type === "screen-frame") {
+        broadcastScreenFrame(sessionId, message);
         return;
       }
 
@@ -108,6 +119,7 @@ wss.on("connection", (socket) => {
 
   socket.on("close", () => {
     dashboards.delete(socket);
+    removeViewer(socket);
 
     if (role === "agent" && sessionId) {
       const agent = agents.get(sessionId);
@@ -200,6 +212,49 @@ function forwardAgentCommand(sourceSocket, message) {
 function broadcastDashboards(message) {
   const payload = JSON.stringify(message);
   for (const socket of dashboards) {
+    if (socket.readyState === WebSocket.OPEN) {
+      socket.send(payload);
+    }
+  }
+}
+
+function watchDevice(socket, rawDeviceCode) {
+  const deviceCode = String(rawDeviceCode || "").trim().toUpperCase();
+  if (!deviceCode) return;
+
+  removeViewer(socket);
+  const viewers = viewersByDevice.get(deviceCode) || new Set();
+  viewers.add(socket);
+  viewersByDevice.set(deviceCode, viewers);
+  socket.watchingDeviceCode = deviceCode;
+}
+
+function removeViewer(socket) {
+  const deviceCode = socket.watchingDeviceCode;
+  if (!deviceCode) return;
+
+  const viewers = viewersByDevice.get(deviceCode);
+  if (viewers) {
+    viewers.delete(socket);
+    if (!viewers.size) viewersByDevice.delete(deviceCode);
+  }
+  delete socket.watchingDeviceCode;
+}
+
+function broadcastScreenFrame(deviceCode, message) {
+  const viewers = viewersByDevice.get(deviceCode);
+  if (!viewers) return;
+
+  const payload = JSON.stringify({
+    type: "screen-frame",
+    deviceCode,
+    width: message.width,
+    height: message.height,
+    frame: message.frame,
+    ts: message.ts || Date.now()
+  });
+
+  for (const socket of viewers) {
     if (socket.readyState === WebSocket.OPEN) {
       socket.send(payload);
     }
