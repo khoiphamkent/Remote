@@ -40,6 +40,7 @@ class LcdAgentService : Service() {
     private val prefs by lazy { getSharedPreferences("lcd_agent", Context.MODE_PRIVATE) }
 
     private var socket: WebSocket? = null
+    private var socketOpen = false
     private var reconnectScheduled = false
     private var heartbeatThread: Thread? = null
     private var mediaProjection: MediaProjection? = null
@@ -67,7 +68,8 @@ class LcdAgentService : Service() {
         super.onCreate()
         isRunning = true
         createNotificationChannel()
-        runCatching { startForeground(NOTIFICATION_ID, buildNotification("LCD Agent running")) }
+        startForeground(NOTIFICATION_ID, buildNotification("LCD Agent running"))
+        connectionStatus = "Relay: connecting"
         connectAgent()
     }
 
@@ -110,6 +112,8 @@ class LcdAgentService : Service() {
         mainHandler.removeCallbacksAndMessages(null)
         stopScreenCapture()
         socket?.close(1000, "Service stopped")
+        socketOpen = false
+        connectionStatus = "Relay: stopped"
         heartbeatThread?.interrupt()
         super.onDestroy()
     }
@@ -127,21 +131,28 @@ class LcdAgentService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     private fun connectAgent() {
-        if (socket?.send("""{"type":"heartbeat"}""") == true) return
+        if (socketOpen && socket?.send("""{"type":"heartbeat"}""") == true) return
         reconnectScheduled = false
+        connectionStatus = "Relay: connecting"
 
         val request = Request.Builder().url(toWebSocketUrl(DEFAULT_RELAY_URL)).build()
         socket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
+                socketOpen = true
+                connectionStatus = "Relay: connected"
                 webSocket.send("""{"type":"register","role":"agent","sessionId":"$deviceCode"}""")
                 startHeartbeat(webSocket)
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                socketOpen = false
+                connectionStatus = "Relay: reconnecting"
                 scheduleReconnect()
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                socketOpen = false
+                connectionStatus = "Relay: ${t.message ?: "connection failed"}"
                 scheduleReconnect()
             }
 
@@ -166,8 +177,18 @@ class LcdAgentService : Service() {
             while (!Thread.currentThread().isInterrupted) {
                 try {
                     Thread.sleep(15000)
-                    webSocket.send("""{"type":"heartbeat"}""")
+                    if (!webSocket.send("""{"type":"heartbeat"}""")) {
+                        socketOpen = false
+                        connectionStatus = "Relay: heartbeat failed"
+                        scheduleReconnect()
+                        return@Thread
+                    }
                 } catch (_: InterruptedException) {
+                    return@Thread
+                } catch (error: Exception) {
+                    socketOpen = false
+                    connectionStatus = "Relay: ${error.message ?: "heartbeat error"}"
+                    scheduleReconnect()
                     return@Thread
                 }
             }
@@ -455,5 +476,6 @@ class LcdAgentService : Service() {
 
         @Volatile var isRunning = false
         @Volatile var hasProjection = false
+        @Volatile var connectionStatus = "Relay: stopped"
     }
 }

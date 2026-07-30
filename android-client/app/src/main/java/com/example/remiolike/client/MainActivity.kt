@@ -28,6 +28,12 @@ class MainActivity : Activity() {
     private lateinit var relayInput: EditText
     private lateinit var devicePolicyManager: DevicePolicyManager
     private lateinit var adminComponent: ComponentName
+    private val statusRefresh = object : Runnable {
+        override fun run() {
+            refreshPermissionStatus()
+            permissionStatusText.postDelayed(this, 1500)
+        }
+    }
 
     private val deviceCode: String by lazy {
         prefs.getString(KEY_DEVICE_CODE, null) ?: createAndStoreDeviceCode()
@@ -57,6 +63,17 @@ class MainActivity : Activity() {
         refreshPermissionStatus()
         startAgentService()
         applyKioskIfDeviceOwner()
+        if (::permissionStatusText.isInitialized) {
+            permissionStatusText.removeCallbacks(statusRefresh)
+            permissionStatusText.postDelayed(statusRefresh, 1500)
+        }
+    }
+
+    override fun onPause() {
+        if (::permissionStatusText.isInitialized) {
+            permissionStatusText.removeCallbacks(statusRefresh)
+        }
+        super.onPause()
     }
 
     override fun onBackPressed() {
@@ -268,6 +285,7 @@ class MainActivity : Activity() {
         if (!::permissionStatusText.isInitialized) return
 
         val service = if (LcdAgentService.isRunning) "Agent service: running" else "Agent service: starting"
+        val relay = LcdAgentService.connectionStatus
         val kiosk = if (devicePolicyManager.isDeviceOwnerApp(packageName)) {
             "Kiosk: device owner active"
         } else {
@@ -279,7 +297,7 @@ class MainActivity : Activity() {
             else -> "Screen view: needs one-time accept"
         }
         val tap = if (isAccessibilityEnabled()) "Remote control: enabled" else "Remote control: needs Accessibility"
-        permissionStatusText.text = "$service\n$kiosk\n$screen\n$tap\nDevice: $deviceCode"
+        permissionStatusText.text = "$service\n$relay\n$kiosk\n$screen\n$tap\nDevice: $deviceCode"
     }
 
     private fun isAccessibilityEnabled(): Boolean {
