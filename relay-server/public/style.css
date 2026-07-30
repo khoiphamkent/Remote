@@ -71,6 +71,64 @@ input {
   padding: 12px;
 }
 
+.dashboard-page {
+  min-height: 100vh;
+  background: #101418;
+}
+
+.dashboard-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 24px;
+  background: #182029;
+  border-bottom: 1px solid #2a3541;
+}
+
+.dashboard-header h1 {
+  margin: 0;
+  font-size: 24px;
+}
+
+.device-list {
+  display: grid;
+  gap: 12px;
+  padding: 24px;
+}
+
+.device-card {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid #2f3a46;
+  border-radius: 8px;
+  background: #182029;
+}
+
+.device-card h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.device-status {
+  color: #c3ced8;
+}
+
+.device-status.online {
+  color: #7bdcb5;
+}
+
+.empty-state {
+  padding: 32px;
+  border: 1px solid #2f3a46;
+  border-radius: 8px;
+  color: #c3ced8;
+  background: #182029;
+}
+
 video {
   width: min(100%, 1200px);
   max-height: calc(100vh - 72px);

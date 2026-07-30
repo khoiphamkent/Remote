@@ -3,7 +3,7 @@
 Bo project nay la starter kit de lam ung dung tuong tu mo hinh Remio:
 
 - `pc-host`: ung dung Windows/Electron de chia se man hinh qua WebRTC.
-- `android-client`: ung dung Android 11 native WebView de xem PC host.
+- `android-client`: ung dung Android 11 LCD Agent de dang ky man hinh LCD len relay.
 - `relay-server`: signaling server cong khai de host va client ket noi khi khac Wi-Fi.
 
 > Luu y: hai file `.exe` Remio trong Downloads la installer da build san, khong phai source code. Project nay duoc dung moi theo cung mo hinh host/client.
@@ -50,13 +50,34 @@ Sau khi relay co URL cong khai, vi du:
 https://your-relay.example.com
 ```
 
-Mo PC Host, nhap URL nay vao `Relay URL`, bam `Start sharing`, app se hien link:
+Dashboard quan sat LCD nam tai:
+
+```text
+https://your-relay.example.com/dashboard.html
+```
+
+Voi mo hinh cu PC share sang Android viewer, mo PC Host, nhap URL nay vao `Relay URL`, bam `Start sharing`, app se hien link:
 
 ```text
 https://your-relay.example.com/client.html?session=<CODE>
 ```
 
-Mo Android Client va nhap link do.
+Voi mo hinh LCD Agent moi, cai APK Android, mo app, luu `LCD-XXXXXX` hien lan dau, nhap `Relay URL`, bam `Start Agent`. PC mo dashboard se thay LCD online.
+
+## Mo hinh LCD Agent
+
+Nac hien tai da co:
+
+- Android tu tao `LCD-XXXXXX` mot lan va luu co dinh trong may.
+- Code hien lan dau de nguoi lap dat ghi lai, khong co o sua code.
+- Android ket noi Render relay va bao online.
+- Relay co `/dashboard.html` va `/devices` de PC xem LCD online.
+
+Nac tiep theo can lam:
+
+- Android xin quyen capture man hinh bang MediaProjection.
+- Android stream man hinh len PC viewer bang WebRTC.
+- Chay nen bang foreground service/kiosk mode.
 
 ## Chay cung Wi-Fi / LAN
 

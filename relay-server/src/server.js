@@ -10,19 +10,25 @@ const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 const rooms = new Map();
+const agents = new Map();
+const dashboards = new Set();
 
 app.use(express.static(path.join(__dirname, "..", "public")));
 
 app.get("/health", (_req, res) => {
-  res.json({ ok: true, rooms: rooms.size });
+  res.json({ ok: true, rooms: rooms.size, agents: agents.size });
 });
 
 app.get("/config", (_req, res) => {
   res.json({ iceServers: ICE_SERVERS });
 });
 
+app.get("/devices", (_req, res) => {
+  res.json({ devices: getDeviceList() });
+});
+
 app.get("/", (_req, res) => {
-  res.redirect("/client.html");
+  res.redirect("/dashboard.html");
 });
 
 wss.on("connection", (socket) => {
@@ -37,12 +43,29 @@ wss.on("connection", (socket) => {
       return;
     }
 
-    if (message.type === "register") {
-      sessionId = String(message.sessionId || "").trim().toUpperCase();
-      role = message.role === "host" ? "host" : "client";
-      if (!sessionId) return;
+      if (message.type === "register") {
+        sessionId = String(message.sessionId || "").trim().toUpperCase();
+        role = normalizeRole(message.role);
+        if (!sessionId) return;
 
-      const room = rooms.get(sessionId) || {};
+        if (role === "agent") {
+          agents.set(sessionId, {
+            deviceCode: sessionId,
+            socket,
+            lastSeen: Date.now()
+          });
+          socket.send(JSON.stringify({ type: "registered", sessionId, role }));
+          broadcastDevices();
+          return;
+        }
+
+        if (role === "dashboard") {
+          dashboards.add(socket);
+          socket.send(JSON.stringify({ type: "devices", devices: getDeviceList() }));
+          return;
+        }
+
+        const room = rooms.get(sessionId) || {};
       if (room[role] && room[role].readyState === WebSocket.OPEN) {
         room[role].close(4000, "Replaced by a new connection");
       }
@@ -51,9 +74,22 @@ wss.on("connection", (socket) => {
       socket.send(JSON.stringify({ type: "registered", sessionId, role }));
       notifyPeerCount(sessionId);
       return;
-    }
+      }
 
-    const room = rooms.get(sessionId);
+      if (role === "agent" && message.type === "heartbeat") {
+        const agent = agents.get(sessionId);
+        if (agent) {
+          agent.lastSeen = Date.now();
+        }
+        return;
+      }
+
+      if (role === "dashboard" && message.type === "list-devices") {
+        socket.send(JSON.stringify({ type: "devices", devices: getDeviceList() }));
+        return;
+      }
+
+      const room = rooms.get(sessionId);
     const target = role === "host" ? room?.client : room?.host;
     if (target && target.readyState === WebSocket.OPEN) {
       target.send(JSON.stringify(message));
@@ -61,6 +97,17 @@ wss.on("connection", (socket) => {
   });
 
   socket.on("close", () => {
+    dashboards.delete(socket);
+
+    if (role === "agent" && sessionId) {
+      const agent = agents.get(sessionId);
+      if (agent?.socket === socket) {
+        agents.delete(sessionId);
+        broadcastDevices();
+      }
+      return;
+    }
+
     if (!sessionId || !role) return;
     const room = rooms.get(sessionId);
     if (!room) return;
@@ -76,6 +123,44 @@ wss.on("connection", (socket) => {
     }
   });
 });
+
+setInterval(() => {
+  const staleBefore = Date.now() - 45000;
+  let changed = false;
+
+  for (const [deviceCode, agent] of agents.entries()) {
+    if (agent.lastSeen < staleBefore || agent.socket.readyState !== WebSocket.OPEN) {
+      agents.delete(deviceCode);
+      changed = true;
+    }
+  }
+
+  if (changed) broadcastDevices();
+}, 15000);
+
+function normalizeRole(value) {
+  if (value === "agent" || value === "dashboard") return value;
+  return value === "host" ? "host" : "client";
+}
+
+function getDeviceList() {
+  return Array.from(agents.values())
+    .map((agent) => ({
+      deviceCode: agent.deviceCode,
+      online: agent.socket.readyState === WebSocket.OPEN,
+      lastSeen: agent.lastSeen
+    }))
+    .sort((a, b) => a.deviceCode.localeCompare(b.deviceCode));
+}
+
+function broadcastDevices() {
+  const payload = JSON.stringify({ type: "devices", devices: getDeviceList() });
+  for (const socket of dashboards) {
+    if (socket.readyState === WebSocket.OPEN) {
+      socket.send(payload);
+    }
+  }
+}
 
 function notifyPeerCount(sessionId) {
   const room = rooms.get(sessionId);
