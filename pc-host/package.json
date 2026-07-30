@@ -1,6 +1,6 @@
 {
   "name": "remio-like-pc-host",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "PC host for LAN WebRTC screen sharing with Android client.",
   "author": "Local",
   "main": "src/main.js",
