@@ -163,6 +163,12 @@ input {
   font-size: 18px;
 }
 
+.viewer-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .viewer-stage {
   display: grid;
   place-items: center;
@@ -171,16 +177,20 @@ input {
   position: relative;
 }
 
-.viewer-stage img {
+.viewer-stage img,
+.viewer-stage video {
   max-width: 100%;
   max-height: 100%;
   border: 1px solid #2f3a46;
   border-radius: 8px;
   background: #050708;
   cursor: crosshair;
+  object-fit: contain;
+  touch-action: none;
 }
 
-.viewer-stage img[hidden] {
+.viewer-stage img[hidden],
+.viewer-stage video[hidden] {
   display: none;
 }
 
@@ -207,8 +217,4 @@ input {
 
 video {
   width: min(100%, 1200px);
-  max-height: calc(100vh - 72px);
-  background: #050708;
-  border: 1px solid #2f3a46;
-  border-radius: 8px;
 }

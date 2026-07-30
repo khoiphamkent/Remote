@@ -1,4 +1,5 @@
 <resources>
     <string name="app_name">LCD Agent</string>
-    <string name="accessibility_service_description">Allows LCD Dashboard to send tap commands to this managed LCD device.</string>
+    <string name="accessibility_service_description">Allows LCD Dashboard to send tap, swipe, back, home, and recents commands to this managed LCD device.</string>
+    <string name="device_admin_description">Allows LCD Agent to keep this managed display in kiosk mode.</string>
 </resources>

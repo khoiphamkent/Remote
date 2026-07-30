@@ -16,6 +16,12 @@ class BootReceiver : BroadcastReceiver() {
                 Intent(context, LcdAgentService::class.java)
                     .setAction(LcdAgentService.ACTION_START)
             )
+            runCatching {
+                context.startActivity(
+                    Intent(context, MainActivity::class.java)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            }
         }
     }
 }

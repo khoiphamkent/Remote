@@ -67,21 +67,38 @@ Nac hien tai da co:
 - Android auto-fill `https://remote-4617.onrender.com`, tu ket noi Render relay va bao online.
 - Relay co `/dashboard.html` va `/devices` de PC xem LCD online.
 - PC Dashboard co lenh dieu khien co ban: `Identify` de hien thong bao tren LCD, `Open URL` de mo link tren LCD Agent.
-- PC Dashboard co `View` de xem anh man hinh LCD Agent qua frame JPEG WebSocket kich thuoc nho de on dinh tren Render.
-- PC co the click len anh viewer de gui lenh tap ve LCD Agent.
-- Android Agent chay bang foreground service nen van online khi bam Home/Back.
-- Android Agent tu khoi dong lai service khi boot/may cai update, va setup share man hinh chi tu dong hoi mot lan luc cai/mo lan dau.
-- Stream viewer duoc tang len khoang 4 fps va chi gui frame khi PC dang bam `View`.
+- PC Dashboard co `View` de xem man hinh LCD Agent. Dashboard uu tien WebRTC video cho latency thap/FPS cao, va fallback ve JPEG WebSocket neu WebRTC khong bat tay duoc.
+- PC co the tap, swipe, Back, Home, Recents tren LCD Agent neu Accessibility da duoc bat.
+- Android Agent chay bang foreground service nen van online khi bam Home/Back neu he thong khong kill service.
+- Android Agent tu khoi dong lai service khi boot/may cai update. Neu app la Device Owner, app tu mo lai va vao kiosk/lock-task.
+- Kiosk mode: khi duoc set Device Owner, LCD Agent allowlist lock-task, khoa status bar/keyguard neu thiet bi ho tro, va khong cho nguoi dung thoat app bang thao tac thuong.
 
 Quyen can bat tren Android:
 
 - Khi mo app, Android Agent tu xin quyen share/capture screen. Nguoi lap dat chi can dong y.
-- De click/tap tu PC co tac dung tren Android, app se mo huong dan Accessibility. Neu Android bao app bi han che, vao App settings -> menu top-right -> `Allow restricted settings`, sau do vao Accessibility -> LCD Agent -> bat service.
+- De dieu khien tu PC co tac dung tren Android, app se mo huong dan Accessibility. Neu Android bao app bi han che, vao App settings -> menu top-right -> `Allow restricted settings`, sau do vao Accessibility -> LCD Agent -> bat service.
+- Android khong cho APK thuong bo qua popup `Chia se toan bo man hinh`. Popup nay phai accept it nhat mot lan sau moi lan reboot/kill projection. Device Owner/kiosk giup app luon song va nguoi dung khong thoat, nhung khong bypass duoc MediaProjection prompt tren Android goc.
+- WebRTC khac Wi-Fi co the can TURN server. Render relay chi relay signaling; neu NAT kho, hay cau hinh `ICE_SERVERS_JSON` co TURN.
 
-Nac tiep theo can lam:
+## Device Owner / Kiosk
 
-- Chay nen bang foreground service/kiosk mode.
-- Nang cap stream tu JPEG frame sang WebRTC neu can FPS cao/latency thap.
+De kiosk dung nghia, nen set ngay sau factory reset, truoc khi them Google account:
+
+```powershell
+adb install -r "C:\Users\khoip\OneDrive\Documents\New project\android-client\app\build\outputs\apk\debug\app-debug.apk"
+adb shell dpm set-device-owner com.example.remiolike.client/.LcdDeviceAdminReceiver
+adb shell monkey -p com.example.remiolike.client 1
+```
+
+Sau do tren LCD:
+
+1. Luu ma `LCD-XXXXXX` hien lan dau.
+2. Bam `Setup All Permissions`.
+3. Accept bo toi uu pin neu may hien.
+4. Accept `Chia se toan bo man hinh`.
+5. Bat Accessibility `LCD Agent` neu can dieu khien tap/swipe/back/home.
+
+Neu `dpm set-device-owner` bao loi do may da co account/owner, can factory reset hoac dung MDM/OEM enrollment.
 
 ## Chay PC Dashboard
 
@@ -127,10 +144,11 @@ Ban build hien tai chua ky code certificate, nen Windows SmartScreen co the can 
 - PC Dashboard mo dashboard LCD mac dinh.
 - Android Agent tu tao ma LCD co dinh va bao online.
 - Relay server quan ly danh sach LCD online/offline.
+- WebRTC stream + JPEG fallback.
+- Remote tap/swipe/back/home/recents qua Accessibility.
+- Foreground service + boot receiver + Device Owner kiosk hooks.
 
 ## Viec can lam tiep
 
-- Chay nen bang foreground service/kiosk mode.
-- Nang cap stream tu JPEG frame sang WebRTC neu can FPS cao/latency thap.
 - Deploy relay server voi HTTPS/WSS va TURN server neu can WebRTC stream on dinh.
 - Build APK/AAB signed release.

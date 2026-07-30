@@ -4,11 +4,26 @@ const commandStatus = document.querySelector("#commandStatus");
 const viewerPanel = document.querySelector("#viewerPanel");
 const viewerTitle = document.querySelector("#viewerTitle");
 const closeViewer = document.querySelector("#closeViewer");
+const backButton = document.querySelector("#backButton");
+const homeButton = document.querySelector("#homeButton");
+const recentsButton = document.querySelector("#recentsButton");
+const screenVideo = document.querySelector("#screenVideo");
 const screenImage = document.querySelector("#screenImage");
 const viewerStatus = document.querySelector("#viewerStatus");
 let socket;
 let activeDeviceCode = "";
 let lastFrameTime = 0;
+let iceServers = [{ urls: "stun:stun.l.google.com:19302" }];
+let peerConnection = null;
+let fallbackTimer = null;
+let pointerStart = null;
+
+fetch("/config")
+  .then((response) => response.json())
+  .then((config) => {
+    if (Array.isArray(config.iceServers)) iceServers = config.iceServers;
+  })
+  .catch(() => {});
 
 function connectDashboard() {
   const protocol = location.protocol === "https:" ? "wss:" : "ws:";
@@ -36,6 +51,15 @@ function connectDashboard() {
       screenImage.dataset.frameWidth = message.width || "";
       screenImage.dataset.frameHeight = message.height || "";
       screenImage.src = `data:image/jpeg;base64,${message.frame}`;
+    }
+    if (message.type === "webrtc-offer" && message.deviceCode === activeDeviceCode) {
+      acceptWebRtcOffer(message);
+    }
+    if (message.type === "webrtc-ice" && message.deviceCode === activeDeviceCode && peerConnection) {
+      peerConnection.addIceCandidate(message.candidate).catch(() => {});
+    }
+    if (message.type === "webrtc-state" && message.deviceCode === activeDeviceCode) {
+      viewerStatus.textContent = message.message || "WebRTC status updated.";
     }
   });
 
@@ -99,13 +123,23 @@ function renderDevices(devices) {
 function openViewer(deviceCode) {
   activeDeviceCode = deviceCode;
   viewerTitle.textContent = `${deviceCode} Viewer`;
+  closePeerConnection();
+  window.clearTimeout(fallbackTimer);
+  screenVideo.srcObject = null;
+  screenVideo.hidden = true;
   screenImage.removeAttribute("src");
   screenImage.hidden = true;
-  viewerStatus.textContent = "Waiting for Android screen permission...";
+  viewerStatus.textContent = "Starting WebRTC screen stream...";
   viewerPanel.hidden = false;
   commandStatus.textContent = `${deviceCode}: starting screen view...`;
   socket.send(JSON.stringify({ type: "watch-device", deviceCode }));
-  sendAgentCommand(deviceCode, { type: "start-screen" });
+  sendAgentCommand(deviceCode, { type: "start-webrtc" });
+  fallbackTimer = window.setTimeout(() => {
+    if (activeDeviceCode === deviceCode && screenVideo.hidden) {
+      viewerStatus.textContent = "WebRTC not ready. Falling back to JPEG stream...";
+      sendAgentCommand(deviceCode, { type: "start-screen" });
+    }
+  }, 8000);
 }
 
 function sendAgentCommand(deviceCode, command) {
@@ -126,16 +160,34 @@ function sendAgentCommand(deviceCode, command) {
 
 closeViewer.addEventListener("click", () => {
   if (activeDeviceCode) {
+    sendAgentCommand(activeDeviceCode, { type: "stop-webrtc" });
     sendAgentCommand(activeDeviceCode, { type: "stop-screen" });
   }
   activeDeviceCode = "";
+  closePeerConnection();
+  window.clearTimeout(fallbackTimer);
+  screenVideo.srcObject = null;
+  screenVideo.hidden = true;
   viewerPanel.hidden = true;
   screenImage.removeAttribute("src");
   screenImage.hidden = true;
 });
 
+backButton.addEventListener("click", () => {
+  if (activeDeviceCode) sendAgentCommand(activeDeviceCode, { type: "back" });
+});
+
+homeButton.addEventListener("click", () => {
+  if (activeDeviceCode) sendAgentCommand(activeDeviceCode, { type: "home" });
+});
+
+recentsButton.addEventListener("click", () => {
+  if (activeDeviceCode) sendAgentCommand(activeDeviceCode, { type: "recents" });
+});
+
 screenImage.addEventListener("load", () => {
   if (activeDeviceCode) {
+    if (!screenVideo.hidden) return;
     screenImage.hidden = false;
     viewerStatus.textContent = `Last frame: ${new Date(lastFrameTime).toLocaleTimeString()}`;
   }
@@ -146,13 +198,90 @@ screenImage.addEventListener("error", () => {
   viewerStatus.textContent = "Frame received but image decode failed. Waiting for next frame...";
 });
 
-screenImage.addEventListener("click", (event) => {
-  if (!activeDeviceCode || !screenImage.src) return;
+screenImage.addEventListener("pointerdown", onPointerDown);
+screenImage.addEventListener("pointerup", onPointerUp);
+screenVideo.addEventListener("pointerdown", onPointerDown);
+screenVideo.addEventListener("pointerup", onPointerUp);
 
-  const rect = screenImage.getBoundingClientRect();
-  const x = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
-  const y = Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height));
-  sendAgentCommand(activeDeviceCode, { type: "tap", x, y });
-});
+async function acceptWebRtcOffer(message) {
+  closePeerConnection();
+  peerConnection = new RTCPeerConnection({ iceServers });
+
+  peerConnection.ontrack = (event) => {
+    window.clearTimeout(fallbackTimer);
+    screenImage.hidden = true;
+    screenVideo.hidden = false;
+    screenVideo.srcObject = event.streams[0];
+    viewerStatus.textContent = "Receiving WebRTC screen...";
+  };
+
+  peerConnection.onicecandidate = (event) => {
+    if (!event.candidate || !activeDeviceCode) return;
+    socket.send(JSON.stringify({
+      type: "webrtc-ice",
+      deviceCode: activeDeviceCode,
+      candidate: event.candidate
+    }));
+  };
+
+  peerConnection.onconnectionstatechange = () => {
+    if (!peerConnection) return;
+    viewerStatus.textContent = `WebRTC: ${peerConnection.connectionState}`;
+  };
+
+  await peerConnection.setRemoteDescription({ type: "offer", sdp: message.sdp });
+  const answer = await peerConnection.createAnswer();
+  await peerConnection.setLocalDescription(answer);
+  socket.send(JSON.stringify({
+    type: "webrtc-answer",
+    deviceCode: activeDeviceCode,
+    sdp: answer.sdp
+  }));
+}
+
+function closePeerConnection() {
+  if (!peerConnection) return;
+  peerConnection.close();
+  peerConnection = null;
+}
+
+function onPointerDown(event) {
+  const point = getNormalizedPoint(event.currentTarget, event);
+  if (!point) return;
+  pointerStart = point;
+  event.currentTarget.setPointerCapture?.(event.pointerId);
+}
+
+function onPointerUp(event) {
+  if (!activeDeviceCode || !pointerStart) return;
+  const end = getNormalizedPoint(event.currentTarget, event);
+  const start = pointerStart;
+  pointerStart = null;
+  if (!end) return;
+
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const distance = Math.hypot(dx, dy);
+  if (distance < 0.025) {
+    sendAgentCommand(activeDeviceCode, { type: "tap", x: end.x, y: end.y });
+  } else {
+    sendAgentCommand(activeDeviceCode, {
+      type: "swipe",
+      startX: start.x,
+      startY: start.y,
+      endX: end.x,
+      endY: end.y
+    });
+  }
+}
+
+function getNormalizedPoint(target, event) {
+  const rect = target.getBoundingClientRect();
+  if (!rect.width || !rect.height) return null;
+  return {
+    x: Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)),
+    y: Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height))
+  };
+}
 
 connectDashboard();

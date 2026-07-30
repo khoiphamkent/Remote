@@ -3,6 +3,7 @@ package com.example.remiolike.client
 import android.app.Activity
 import android.app.AlertDialog
 import android.Manifest
+import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -25,6 +26,8 @@ class MainActivity : Activity() {
     private lateinit var projectionManager: MediaProjectionManager
     private lateinit var permissionStatusText: TextView
     private lateinit var relayInput: EditText
+    private lateinit var devicePolicyManager: DevicePolicyManager
+    private lateinit var adminComponent: ComponentName
 
     private val deviceCode: String by lazy {
         prefs.getString(KEY_DEVICE_CODE, null) ?: createAndStoreDeviceCode()
@@ -33,9 +36,12 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         projectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+        devicePolicyManager = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+        adminComponent = ComponentName(this, LcdDeviceAdminReceiver::class.java)
         buildUi()
         startAgentService()
         requestNotificationPermissionIfNeeded()
+        applyKioskIfDeviceOwner()
 
         val needsCodeAcknowledgement = !prefs.getBoolean(KEY_CODE_ACKNOWLEDGED, false)
         showDeviceCodeOnce()
@@ -50,10 +56,13 @@ class MainActivity : Activity() {
         super.onResume()
         refreshPermissionStatus()
         startAgentService()
+        applyKioskIfDeviceOwner()
     }
 
     override fun onBackPressed() {
-        moveTaskToBack(true)
+        if (!applyKioskIfDeviceOwner()) {
+            moveTaskToBack(true)
+        }
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -125,6 +134,11 @@ class MainActivity : Activity() {
             setOnClickListener { moveTaskToBack(true) }
         }
 
+        val kioskButton = Button(this).apply {
+            text = "Enter Kiosk Mode"
+            setOnClickListener { enterKioskOrShowSetup() }
+        }
+
         permissionStatusText = TextView(this).apply {
             text = "Checking permissions..."
             textSize = 15f
@@ -135,6 +149,7 @@ class MainActivity : Activity() {
         root.addView(description)
         root.addView(relayInput)
         root.addView(setupButton)
+        root.addView(kioskButton)
         root.addView(accessibilityButton)
         root.addView(hideButton)
         root.addView(permissionStatusText)
@@ -166,6 +181,33 @@ class MainActivity : Activity() {
         requestNotificationPermissionIfNeeded()
         requestIgnoreBatteryOptimizationsIfNeeded()
         requestScreenCapture()
+    }
+
+    private fun enterKioskOrShowSetup() {
+        if (applyKioskIfDeviceOwner()) return
+
+        AlertDialog.Builder(this)
+            .setTitle("Device Owner required")
+            .setMessage(
+                "To lock this LCD into kiosk mode, set LCD Agent as Device Owner once with ADB before normal use:\n\n" +
+                    "adb shell dpm set-device-owner com.example.remiolike.client/.LcdDeviceAdminReceiver\n\n" +
+                    "This usually requires a freshly reset device with no Google account added yet."
+            )
+            .setPositiveButton("OK", null)
+            .show()
+    }
+
+    private fun applyKioskIfDeviceOwner(): Boolean {
+        if (!::devicePolicyManager.isInitialized) return false
+        if (!devicePolicyManager.isDeviceOwnerApp(packageName)) return false
+
+        runCatching { devicePolicyManager.setLockTaskPackages(adminComponent, arrayOf(packageName)) }
+        runCatching { devicePolicyManager.setKeyguardDisabled(adminComponent, true) }
+        if (Build.VERSION.SDK_INT >= 23) {
+            runCatching { devicePolicyManager.setStatusBarDisabled(adminComponent, true) }
+        }
+        runCatching { startLockTask() }
+        return true
     }
 
     private fun requestNotificationPermissionIfNeeded() {
@@ -226,13 +268,18 @@ class MainActivity : Activity() {
         if (!::permissionStatusText.isInitialized) return
 
         val service = if (LcdAgentService.isRunning) "Agent service: running" else "Agent service: starting"
+        val kiosk = if (devicePolicyManager.isDeviceOwnerApp(packageName)) {
+            "Kiosk: device owner active"
+        } else {
+            "Kiosk: needs Device Owner setup"
+        }
         val screen = when {
             LcdAgentService.hasProjection -> "Screen view: enabled"
             prefs.getBoolean(KEY_SCREEN_CAPTURE_ACCEPTED, false) -> "Screen view: accepted once, reopen setup only if Android killed it"
             else -> "Screen view: needs one-time accept"
         }
-        val tap = if (isAccessibilityEnabled()) "Tap control: enabled" else "Tap control: needs Accessibility"
-        permissionStatusText.text = "$service\n$screen\n$tap\nDevice: $deviceCode"
+        val tap = if (isAccessibilityEnabled()) "Remote control: enabled" else "Remote control: needs Accessibility"
+        permissionStatusText.text = "$service\n$kiosk\n$screen\n$tap\nDevice: $deviceCode"
     }
 
     private fun isAccessibilityEnabled(): Boolean {

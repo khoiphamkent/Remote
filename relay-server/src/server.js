@@ -55,14 +55,14 @@ wss.on("connection", (socket) => {
             socket,
             lastSeen: Date.now()
           });
-          socket.send(JSON.stringify({ type: "registered", sessionId, role }));
+          socket.send(JSON.stringify({ type: "registered", sessionId, role, iceServers: ICE_SERVERS }));
           broadcastDevices();
           return;
         }
 
         if (role === "dashboard") {
           dashboards.add(socket);
-          socket.send(JSON.stringify({ type: "devices", devices: getDeviceList() }));
+          socket.send(JSON.stringify({ type: "devices", devices: getDeviceList(), iceServers: ICE_SERVERS }));
           return;
         }
 
@@ -72,7 +72,7 @@ wss.on("connection", (socket) => {
       }
       room[role] = socket;
       rooms.set(sessionId, room);
-      socket.send(JSON.stringify({ type: "registered", sessionId, role }));
+      socket.send(JSON.stringify({ type: "registered", sessionId, role, iceServers: ICE_SERVERS }));
       notifyPeerCount(sessionId);
       return;
       }
@@ -100,8 +100,18 @@ wss.on("connection", (socket) => {
         return;
       }
 
+      if (role === "dashboard" && (message.type === "webrtc-answer" || message.type === "webrtc-ice")) {
+        forwardWebRtcToAgent(socket, message);
+        return;
+      }
+
       if (role === "agent" && message.type === "screen-frame") {
         broadcastScreenFrame(sessionId, message);
+        return;
+      }
+
+      if (role === "agent" && (message.type === "webrtc-offer" || message.type === "webrtc-ice" || message.type === "webrtc-state")) {
+        broadcastToDeviceViewers(sessionId, message);
         return;
       }
 
@@ -259,6 +269,35 @@ function broadcastScreenFrame(deviceCode, message) {
       socket.send(payload);
     }
   }
+}
+
+function broadcastToDeviceViewers(deviceCode, message) {
+  const viewers = viewersByDevice.get(deviceCode);
+  if (!viewers) return;
+
+  const payload = JSON.stringify({ ...message, deviceCode });
+  for (const socket of viewers) {
+    if (socket.readyState === WebSocket.OPEN) {
+      socket.send(payload);
+    }
+  }
+}
+
+function forwardWebRtcToAgent(sourceSocket, message) {
+  const deviceCode = String(message.deviceCode || "").trim().toUpperCase();
+  const agent = agents.get(deviceCode);
+
+  if (!agent || agent.socket.readyState !== WebSocket.OPEN) {
+    sourceSocket.send(JSON.stringify({
+      type: "command-result",
+      deviceCode,
+      ok: false,
+      message: "LCD agent is offline"
+    }));
+    return;
+  }
+
+  agent.socket.send(JSON.stringify({ ...message, deviceCode }));
 }
 
 function notifyPeerCount(sessionId) {
