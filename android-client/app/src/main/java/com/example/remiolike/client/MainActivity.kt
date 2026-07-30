@@ -11,6 +11,7 @@ import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
 import android.provider.Settings
 import android.view.ViewGroup
 import android.widget.Button
@@ -39,7 +40,7 @@ class MainActivity : Activity() {
         val needsCodeAcknowledgement = !prefs.getBoolean(KEY_CODE_ACKNOWLEDGED, false)
         showDeviceCodeOnce()
         relayInput.post {
-            if (!needsCodeAcknowledgement) {
+            if (!needsCodeAcknowledgement && !prefs.getBoolean(KEY_INITIAL_SETUP_DONE, false)) {
                 startInitialPermissionSetup()
             }
         }
@@ -60,6 +61,10 @@ class MainActivity : Activity() {
         if (requestCode != REQUEST_MEDIA_PROJECTION) return
 
         if (resultCode == RESULT_OK && data != null) {
+            prefs.edit()
+                .putBoolean(KEY_SCREEN_CAPTURE_ACCEPTED, true)
+                .putBoolean(KEY_INITIAL_SETUP_DONE, true)
+                .apply()
             val serviceIntent = Intent(this, LcdAgentService::class.java)
                 .setAction(LcdAgentService.ACTION_SET_PROJECTION)
                 .putExtra(LcdAgentService.EXTRA_RESULT_CODE, resultCode)
@@ -159,6 +164,7 @@ class MainActivity : Activity() {
     private fun startInitialPermissionSetup() {
         refreshPermissionStatus()
         requestNotificationPermissionIfNeeded()
+        requestIgnoreBatteryOptimizationsIfNeeded()
         requestScreenCapture()
     }
 
@@ -173,6 +179,18 @@ class MainActivity : Activity() {
             projectionManager.createScreenCaptureIntent(),
             REQUEST_MEDIA_PROJECTION
         )
+    }
+
+    private fun requestIgnoreBatteryOptimizationsIfNeeded() {
+        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+        if (powerManager.isIgnoringBatteryOptimizations(packageName)) return
+
+        runCatching {
+            startActivity(
+                Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+                    .setData(Uri.parse("package:$packageName"))
+            )
+        }
     }
 
     private fun showAccessibilityHelp() {
@@ -208,7 +226,11 @@ class MainActivity : Activity() {
         if (!::permissionStatusText.isInitialized) return
 
         val service = if (LcdAgentService.isRunning) "Agent service: running" else "Agent service: starting"
-        val screen = if (LcdAgentService.hasProjection) "Screen view: enabled" else "Screen view: needs accept"
+        val screen = when {
+            LcdAgentService.hasProjection -> "Screen view: enabled"
+            prefs.getBoolean(KEY_SCREEN_CAPTURE_ACCEPTED, false) -> "Screen view: accepted once, reopen setup only if Android killed it"
+            else -> "Screen view: needs one-time accept"
+        }
         val tap = if (isAccessibilityEnabled()) "Tap control: enabled" else "Tap control: needs Accessibility"
         permissionStatusText.text = "$service\n$screen\n$tap\nDevice: $deviceCode"
     }
@@ -238,6 +260,8 @@ class MainActivity : Activity() {
         private const val DEFAULT_RELAY_URL = "https://remote-4617.onrender.com"
         private const val KEY_DEVICE_CODE = "device_code"
         private const val KEY_CODE_ACKNOWLEDGED = "device_code_acknowledged"
+        private const val KEY_SCREEN_CAPTURE_ACCEPTED = "screen_capture_accepted"
+        private const val KEY_INITIAL_SETUP_DONE = "initial_setup_done"
         private const val REQUEST_MEDIA_PROJECTION = 4201
         private const val REQUEST_POST_NOTIFICATIONS = 4202
     }

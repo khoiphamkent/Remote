@@ -70,6 +70,7 @@ Nac hien tai da co:
 - PC Dashboard co `View` de xem anh man hinh LCD Agent qua frame JPEG WebSocket kich thuoc nho de on dinh tren Render.
 - PC co the click len anh viewer de gui lenh tap ve LCD Agent.
 - Android Agent chay bang foreground service nen van online khi bam Home/Back.
+- Android Agent tu khoi dong lai service khi boot/may cai update, va setup share man hinh chi tu dong hoi mot lan luc cai/mo lan dau.
 
 Quyen can bat tren Android:
 
