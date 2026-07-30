@@ -9,8 +9,15 @@ const homeButton = document.querySelector("#homeButton");
 const recentsButton = document.querySelector("#recentsButton");
 const screenImage = document.querySelector("#screenImage");
 const viewerStatus = document.querySelector("#viewerStatus");
+const editDialog = document.querySelector("#editDialog");
+const editDeviceCode = document.querySelector("#editDeviceCode");
+const editNameInput = document.querySelector("#editNameInput");
+const resetEditButton = document.querySelector("#resetEditButton");
+const cancelEditButton = document.querySelector("#cancelEditButton");
+const saveEditButton = document.querySelector("#saveEditButton");
 let socket;
 let activeDeviceCode = "";
+let editingDeviceCode = "";
 let lastFrameTime = 0;
 let pointerStart = null;
 const DEVICE_LABELS_KEY = "lcd-dashboard-device-labels";
@@ -94,7 +101,7 @@ function renderDevices(devices) {
     const edit = document.createElement("button");
     edit.className = "button secondary-button";
     edit.textContent = "Edit";
-    edit.onclick = () => editDeviceLabel(device.deviceCode);
+    edit.onclick = () => openEditDialog(device.deviceCode);
 
     const action = document.createElement("button");
     action.className = "button";
@@ -122,22 +129,43 @@ function openViewer(deviceCode) {
   sendAgentCommand(deviceCode, { type: "start-screen" });
 }
 
-function editDeviceLabel(deviceCode) {
+function openEditDialog(deviceCode) {
   const labels = getDeviceLabels();
-  const currentLabel = labels[deviceCode] || "";
-  const nextLabel = prompt("Display name for this LCD", currentLabel || deviceCode);
-  if (nextLabel === null) return;
+  editingDeviceCode = deviceCode;
+  editDeviceCode.textContent = deviceCode;
+  editNameInput.value = labels[deviceCode] || "";
+  editDialog.hidden = false;
+  window.setTimeout(() => {
+    editNameInput.focus();
+    editNameInput.select();
+  }, 0);
+}
 
-  const cleaned = nextLabel.trim();
-  if (!cleaned || cleaned === deviceCode) {
-    delete labels[deviceCode];
-    commandStatus.textContent = `${deviceCode}: name reset`;
+function closeEditDialog() {
+  editingDeviceCode = "";
+  editDialog.hidden = true;
+}
+
+function saveEditLabel() {
+  if (!editingDeviceCode) return;
+  const labels = getDeviceLabels();
+  const cleaned = editNameInput.value.trim();
+  if (!cleaned || cleaned === editingDeviceCode) {
+    delete labels[editingDeviceCode];
+    commandStatus.textContent = `${editingDeviceCode}: name reset`;
   } else {
-    labels[deviceCode] = cleaned.slice(0, 60);
-    commandStatus.textContent = `${deviceCode}: name saved`;
+    labels[editingDeviceCode] = cleaned.slice(0, 60);
+    commandStatus.textContent = `${editingDeviceCode}: name saved`;
   }
   localStorage.setItem(DEVICE_LABELS_KEY, JSON.stringify(labels));
+  closeEditDialog();
   socket?.send(JSON.stringify({ type: "list-devices" }));
+}
+
+function resetEditLabel() {
+  if (!editingDeviceCode) return;
+  editNameInput.value = "";
+  saveEditLabel();
 }
 
 function getDeviceLabels() {
@@ -184,6 +212,19 @@ homeButton.addEventListener("click", () => {
 
 recentsButton.addEventListener("click", () => {
   if (activeDeviceCode) sendAgentCommand(activeDeviceCode, { type: "recents" });
+});
+
+saveEditButton.addEventListener("click", saveEditLabel);
+resetEditButton.addEventListener("click", resetEditLabel);
+cancelEditButton.addEventListener("click", closeEditDialog);
+
+editDialog.addEventListener("click", (event) => {
+  if (event.target === editDialog) closeEditDialog();
+});
+
+editNameInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") saveEditLabel();
+  if (event.key === "Escape") closeEditDialog();
 });
 
 screenImage.addEventListener("load", () => {

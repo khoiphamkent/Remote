@@ -226,6 +226,61 @@ input {
   background: #182029;
 }
 
+.edit-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(5, 7, 8, 0.62);
+}
+
+.edit-dialog[hidden] {
+  display: none;
+}
+
+.edit-modal {
+  display: grid;
+  gap: 12px;
+  width: min(440px, 100%);
+  padding: 20px;
+  border: 1px solid #2f3a46;
+  border-radius: 8px;
+  background: #182029;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.45);
+}
+
+.edit-modal h2,
+.edit-modal p {
+  margin: 0;
+}
+
+.edit-modal p {
+  color: #91a1b1;
+}
+
+.edit-modal label {
+  color: #c3ced8;
+  font-size: 13px;
+}
+
+.edit-modal input {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #344454;
+  border-radius: 8px;
+  background: #101820;
+  color: #eef3f7;
+}
+
+.edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 8px;
+}
+
 video {
   width: min(100%, 1200px);
 }

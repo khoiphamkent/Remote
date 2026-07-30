@@ -15,6 +15,19 @@
       <span id="commandStatus">Ready.</span>
     </section>
     <main class="device-list" id="deviceList"></main>
+    <section id="editDialog" class="edit-dialog" hidden>
+      <div class="edit-modal">
+        <h2>Edit LCD</h2>
+        <p id="editDeviceCode">LCD</p>
+        <label for="editNameInput">Display name</label>
+        <input id="editNameInput" type="text" maxlength="60" autocomplete="off">
+        <div class="edit-actions">
+          <button id="resetEditButton" class="button secondary-button">Reset</button>
+          <button id="cancelEditButton" class="button secondary-button">Cancel</button>
+          <button id="saveEditButton" class="button">Save</button>
+        </div>
+      </div>
+    </section>
     <section id="viewerPanel" class="viewer-panel" hidden>
       <header class="viewer-header">
         <h2 id="viewerTitle">LCD Viewer</h2>
