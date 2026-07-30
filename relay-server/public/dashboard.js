@@ -13,6 +13,7 @@ let socket;
 let activeDeviceCode = "";
 let lastFrameTime = 0;
 let pointerStart = null;
+const DEVICE_LABELS_KEY = "lcd-dashboard-device-labels";
 
 function connectDashboard() {
   const protocol = location.protocol === "https:" ? "wss:" : "ws:";
@@ -59,6 +60,7 @@ function connectDashboard() {
 
 function renderDevices(devices) {
   deviceList.innerHTML = "";
+  const labels = getDeviceLabels();
 
   if (!devices.length) {
     const empty = document.createElement("div");
@@ -69,40 +71,39 @@ function renderDevices(devices) {
   }
 
   for (const device of devices) {
+    const label = labels[device.deviceCode] || device.deviceCode;
     const row = document.createElement("article");
     row.className = "device-card";
 
+    const titleGroup = document.createElement("div");
+    titleGroup.className = "device-title";
+
     const title = document.createElement("h2");
-    title.textContent = device.deviceCode;
+    title.textContent = label;
+
+    const code = document.createElement("span");
+    code.textContent = device.deviceCode;
+
+    titleGroup.appendChild(title);
+    titleGroup.appendChild(code);
 
     const status = document.createElement("span");
     status.className = device.online ? "device-status online" : "device-status";
     status.textContent = device.online ? "Online" : "Offline";
 
-    const identify = document.createElement("button");
-    identify.className = "button secondary-button";
-    identify.textContent = "Identify";
-    identify.onclick = () => sendAgentCommand(device.deviceCode, { type: "identify" });
-
-    const openUrl = document.createElement("button");
-    openUrl.className = "button secondary-button";
-    openUrl.textContent = "Open URL";
-    openUrl.onclick = () => {
-      const url = prompt("URL to open on LCD agent", "https://remote-4617.onrender.com/dashboard.html");
-      if (url) {
-        sendAgentCommand(device.deviceCode, { type: "open-url", url });
-      }
-    };
+    const edit = document.createElement("button");
+    edit.className = "button secondary-button";
+    edit.textContent = "Edit";
+    edit.onclick = () => editDeviceLabel(device.deviceCode);
 
     const action = document.createElement("button");
     action.className = "button";
     action.textContent = "View";
     action.onclick = () => openViewer(device.deviceCode);
 
-    row.appendChild(title);
+    row.appendChild(titleGroup);
     row.appendChild(status);
-    row.appendChild(identify);
-    row.appendChild(openUrl);
+    row.appendChild(edit);
     row.appendChild(action);
     deviceList.appendChild(row);
   }
@@ -110,7 +111,8 @@ function renderDevices(devices) {
 
 function openViewer(deviceCode) {
   activeDeviceCode = deviceCode;
-  viewerTitle.textContent = `${deviceCode} Viewer`;
+  const label = getDeviceLabels()[deviceCode] || deviceCode;
+  viewerTitle.textContent = label === deviceCode ? `${deviceCode} Viewer` : `${label} (${deviceCode})`;
   screenImage.removeAttribute("src");
   screenImage.hidden = true;
   viewerStatus.textContent = "Starting screen stream...";
@@ -118,6 +120,32 @@ function openViewer(deviceCode) {
   commandStatus.textContent = `${deviceCode}: starting screen view...`;
   socket.send(JSON.stringify({ type: "watch-device", deviceCode }));
   sendAgentCommand(deviceCode, { type: "start-screen" });
+}
+
+function editDeviceLabel(deviceCode) {
+  const labels = getDeviceLabels();
+  const currentLabel = labels[deviceCode] || "";
+  const nextLabel = prompt("Display name for this LCD", currentLabel || deviceCode);
+  if (nextLabel === null) return;
+
+  const cleaned = nextLabel.trim();
+  if (!cleaned || cleaned === deviceCode) {
+    delete labels[deviceCode];
+    commandStatus.textContent = `${deviceCode}: name reset`;
+  } else {
+    labels[deviceCode] = cleaned.slice(0, 60);
+    commandStatus.textContent = `${deviceCode}: name saved`;
+  }
+  localStorage.setItem(DEVICE_LABELS_KEY, JSON.stringify(labels));
+  socket?.send(JSON.stringify({ type: "list-devices" }));
+}
+
+function getDeviceLabels() {
+  try {
+    return JSON.parse(localStorage.getItem(DEVICE_LABELS_KEY) || "{}");
+  } catch {
+    return {};
+  }
 }
 
 function sendAgentCommand(deviceCode, command) {
