@@ -106,6 +106,16 @@ class LcdAgentService : Service() {
         super.onDestroy()
     }
 
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        mainHandler.postDelayed({
+            startForegroundService(
+                Intent(this, LcdAgentService::class.java)
+                    .setAction(ACTION_START)
+            )
+        }, 1000)
+        super.onTaskRemoved(rootIntent)
+    }
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     private fun connectAgent() {
@@ -215,6 +225,11 @@ class LcdAgentService : Service() {
         )
 
         imageReader?.setOnImageAvailableListener({ reader ->
+            if (!captureActive) {
+                reader.acquireLatestImage()?.close()
+                return@setOnImageAvailableListener
+            }
+
             val now = System.currentTimeMillis()
             if (now - lastFrameAt < FRAME_INTERVAL_MS) {
                 reader.acquireLatestImage()?.close()
@@ -263,13 +278,13 @@ class LcdAgentService : Service() {
         val cropped = Bitmap.createBitmap(bitmap, 0, 0, image.width, image.height)
         bitmap.recycle()
 
-        val targetWidth = 360
+        val targetWidth = 480
         val targetHeight = (targetWidth.toFloat() / cropped.width * cropped.height).toInt().coerceAtLeast(1)
         val scaled = Bitmap.createScaledBitmap(cropped, targetWidth, targetHeight, true)
         cropped.recycle()
 
         val output = ByteArrayOutputStream()
-        scaled.compress(Bitmap.CompressFormat.JPEG, 25, output)
+        scaled.compress(Bitmap.CompressFormat.JPEG, 35, output)
         scaled.recycle()
         return Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP)
     }
@@ -370,7 +385,7 @@ class LcdAgentService : Service() {
         private const val KEY_DEVICE_CODE = "device_code"
         private const val CHANNEL_ID = "lcd_agent"
         private const val NOTIFICATION_ID = 1001
-        private const val FRAME_INTERVAL_MS = 900L
+        private const val FRAME_INTERVAL_MS = 250L
 
         @Volatile var isRunning = false
         @Volatile var hasProjection = false

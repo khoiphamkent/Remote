@@ -71,6 +71,7 @@ Nac hien tai da co:
 - PC co the click len anh viewer de gui lenh tap ve LCD Agent.
 - Android Agent chay bang foreground service nen van online khi bam Home/Back.
 - Android Agent tu khoi dong lai service khi boot/may cai update, va setup share man hinh chi tu dong hoi mot lan luc cai/mo lan dau.
+- Stream viewer duoc tang len khoang 4 fps va chi gui frame khi PC dang bam `View`.
 
 Quyen can bat tren Android:
 
