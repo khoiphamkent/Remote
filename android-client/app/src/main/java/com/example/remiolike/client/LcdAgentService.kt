@@ -201,10 +201,18 @@ class LcdAgentService : Service() {
                 sendCommandResult(commandId, true, "Screen stream stopped")
             }
             "start-webrtc" -> {
-                sendCommandResult(commandId, false, "WebRTC disabled in stable Android build")
+                captureActive = true
+                if (mediaProjection == null) {
+                    sendCommandResult(commandId, false, "Open LCD Agent and accept screen sharing permission")
+                } else {
+                    val ok = startScreenCaptureSafely()
+                    sendCommandResult(commandId, ok, if (ok) "Screen stream started" else "Screen stream failed")
+                }
             }
             "stop-webrtc" -> {
-                sendCommandResult(commandId, true, "WebRTC already stopped")
+                captureActive = false
+                stopScreenCapture(keepProjection = true)
+                sendCommandResult(commandId, true, "Screen stream stopped")
             }
             "tap" -> {
                 val ok = performTap(command.optDouble("x", -1.0), command.optDouble("y", -1.0))

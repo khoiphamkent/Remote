@@ -14,6 +14,15 @@ const agents = new Map();
 const dashboards = new Set();
 const viewersByDevice = new Map();
 
+app.use((req, res, next) => {
+  if (/\.(html|js|css)$/i.test(req.path)) {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+  }
+  next();
+});
+
 app.use(express.static(path.join(__dirname, "..", "public")));
 
 app.get("/health", (_req, res) => {
@@ -197,7 +206,7 @@ function broadcastDevices() {
 function forwardAgentCommand(sourceSocket, message) {
   const deviceCode = String(message.deviceCode || "").trim().toUpperCase();
   const agent = agents.get(deviceCode);
-  const command = message.command || {};
+  const command = normalizeAgentCommand(message.command || {});
   const commandId = message.commandId || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
   if (!agent || agent.socket.readyState !== WebSocket.OPEN) {
@@ -217,6 +226,16 @@ function forwardAgentCommand(sourceSocket, message) {
     deviceCode,
     command
   }));
+}
+
+function normalizeAgentCommand(command) {
+  if (command.type === "start-webrtc") {
+    return { ...command, type: "start-screen" };
+  }
+  if (command.type === "stop-webrtc") {
+    return { ...command, type: "stop-screen" };
+  }
+  return command;
 }
 
 function broadcastDashboards(message) {

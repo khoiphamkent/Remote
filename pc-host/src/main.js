@@ -1,6 +1,7 @@
-const { app, BrowserWindow, shell } = require("electron");
+const { app, BrowserWindow, shell, session } = require("electron");
 
 const DASHBOARD_URL = process.env.LCD_DASHBOARD_URL || "https://remote-4617.onrender.com/dashboard.html";
+const DASHBOARD_VERSION = "stable-054";
 
 let mainWindow;
 
@@ -22,7 +23,13 @@ async function createWindow() {
     return { action: "deny" };
   });
 
-  await mainWindow.loadURL(DASHBOARD_URL);
+  await session.defaultSession.clearCache();
+  await mainWindow.loadURL(withCacheBust(DASHBOARD_URL));
+}
+
+function withCacheBust(url) {
+  const separator = url.includes("?") ? "&" : "?";
+  return `${url}${separator}v=${DASHBOARD_VERSION}`;
 }
 
 app.whenReady().then(createWindow);
