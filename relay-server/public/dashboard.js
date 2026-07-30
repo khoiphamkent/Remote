@@ -49,6 +49,7 @@ function connectDashboard() {
           window.setTimeout(() => {
             if (activeDeviceCode === message.deviceCode && screenVideo.hidden) {
               sendAgentCommand(activeDeviceCode, { type: "start-webrtc" });
+              scheduleJpegFallback(activeDeviceCode);
             }
           }, 500);
         }
@@ -143,6 +144,11 @@ function openViewer(deviceCode) {
   commandStatus.textContent = `${deviceCode}: starting screen view...`;
   socket.send(JSON.stringify({ type: "watch-device", deviceCode }));
   sendAgentCommand(deviceCode, { type: "start-webrtc" });
+  scheduleJpegFallback(deviceCode);
+}
+
+function scheduleJpegFallback(deviceCode) {
+  window.clearTimeout(fallbackTimer);
   fallbackTimer = window.setTimeout(() => {
     if (activeDeviceCode === deviceCode && screenVideo.hidden) {
       viewerStatus.textContent = "WebRTC not ready. Falling back to JPEG stream...";
