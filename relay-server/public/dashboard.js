@@ -30,6 +30,11 @@ if (fitMode === "contain") fitMode = "stretch";
 let frameCount = 0;
 let fpsStartedAt = Date.now();
 let currentFps = 0;
+let pointerLast = null;
+let pointerMoved = false;
+let pointerDownAt = 0;
+let lastDragSentAt = 0;
+let lastWheelSentAt = 0;
 const DEVICE_LABELS_KEY = "lcd-dashboard-device-labels";
 
 function connectDashboard() {
@@ -248,13 +253,21 @@ function getDeviceLabels() {
 }
 
 function sendAgentCommand(deviceCode, command) {
+  const quiet = Boolean(command.quiet);
+  if (quiet) {
+    command = { ...command };
+    delete command.quiet;
+  }
+
   if (!socket || socket.readyState !== WebSocket.OPEN) {
     commandStatus.textContent = "Dashboard is disconnected.";
     return;
   }
 
   const commandId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  commandStatus.textContent = `${deviceCode}: sending ${command.type}...`;
+  if (!quiet) {
+    commandStatus.textContent = `${deviceCode}: sending ${command.type}...`;
+  }
   socket.send(JSON.stringify({
     type: "agent-command",
     commandId,
@@ -272,7 +285,9 @@ function updateViewerStatusFromCommand(message) {
     lower.includes("home sent") ||
     lower.includes("recents sent") ||
     lower.includes("tap sent") ||
-    lower.includes("swipe sent");
+    lower.includes("swipe sent") ||
+    lower.includes("scroll sent") ||
+    lower.includes("long press sent");
 
   if (waitingForFirstFrame && isControlStatus) {
     if (!viewerStatus.textContent || viewerStatus.textContent.includes("Accessibility")) {
@@ -352,29 +367,101 @@ screenImage.addEventListener("error", () => {
 });
 
 screenImage.addEventListener("pointerdown", (event) => {
+  if (!activeDeviceCode) return;
+  event.preventDefault();
+  if (event.button === 1) {
+    sendAgentCommand(activeDeviceCode, { type: "home" });
+    return;
+  }
+  if (event.button === 2) {
+    sendAgentCommand(activeDeviceCode, { type: "back" });
+    return;
+  }
+
   pointerStart = getNormalizedPoint(screenImage, event);
+  pointerLast = pointerStart;
+  pointerMoved = false;
+  pointerDownAt = Date.now();
+  lastDragSentAt = 0;
   screenImage.setPointerCapture?.(event.pointerId);
+});
+
+screenImage.addEventListener("pointermove", (event) => {
+  if (!activeDeviceCode || !pointerStart || !pointerLast || event.buttons !== 1) return;
+  event.preventDefault();
+  const point = getNormalizedPoint(screenImage, event);
+  if (!point) return;
+
+  const distanceFromStart = Math.hypot(point.x - pointerStart.x, point.y - pointerStart.y);
+  const distanceFromLast = Math.hypot(point.x - pointerLast.x, point.y - pointerLast.y);
+  const now = Date.now();
+  if (distanceFromStart > 0.018) pointerMoved = true;
+  if (!pointerMoved || distanceFromLast < 0.012 || now - lastDragSentAt < 130) return;
+
+  sendAgentCommand(activeDeviceCode, {
+    type: "swipe",
+    startX: pointerLast.x,
+    startY: pointerLast.y,
+    endX: point.x,
+    endY: point.y,
+    durationMs: 120,
+    quiet: true
+  });
+  pointerLast = point;
+  lastDragSentAt = now;
 });
 
 screenImage.addEventListener("pointerup", (event) => {
   if (!activeDeviceCode || !pointerStart) return;
+  event.preventDefault();
   const end = getNormalizedPoint(screenImage, event);
   const start = pointerStart;
+  const last = pointerLast || start;
   pointerStart = null;
+  pointerLast = null;
   if (!end) return;
 
   const distance = Math.hypot(end.x - start.x, end.y - start.y);
-  if (distance < 0.025) {
+  const heldMs = Date.now() - pointerDownAt;
+  if (distance < 0.025 && heldMs > 700) {
+    sendAgentCommand(activeDeviceCode, { type: "long-press", x: end.x, y: end.y });
+  } else if (distance < 0.025) {
     sendAgentCommand(activeDeviceCode, { type: "tap", x: end.x, y: end.y });
-  } else {
+  } else if (Math.hypot(end.x - last.x, end.y - last.y) > 0.006) {
     sendAgentCommand(activeDeviceCode, {
       type: "swipe",
-      startX: start.x,
-      startY: start.y,
+      startX: last.x,
+      startY: last.y,
       endX: end.x,
-      endY: end.y
+      endY: end.y,
+      durationMs: 120
     });
   }
+});
+
+screenImage.addEventListener("pointercancel", () => {
+  pointerStart = null;
+  pointerLast = null;
+});
+
+screenImage.addEventListener("wheel", (event) => {
+  if (!activeDeviceCode) return;
+  event.preventDefault();
+  const now = Date.now();
+  if (now - lastWheelSentAt < 180) return;
+  const point = getNormalizedPoint(screenImage, event) || { x: 0.5, y: 0.5 };
+  sendAgentCommand(activeDeviceCode, {
+    type: "scroll",
+    x: point.x,
+    y: point.y,
+    deltaY: event.deltaY,
+    quiet: true
+  });
+  lastWheelSentAt = now;
+}, { passive: false });
+
+screenImage.addEventListener("contextmenu", (event) => {
+  event.preventDefault();
 });
 
 function getNormalizedPoint(target, event) {

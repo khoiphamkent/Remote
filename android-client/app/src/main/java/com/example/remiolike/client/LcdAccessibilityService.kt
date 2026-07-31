@@ -33,6 +33,15 @@ class LcdAccessibilityService : AccessibilityService() {
             return service.dispatchGesture(gesture, null, null)
         }
 
+        fun longPress(x: Float, y: Float): Boolean {
+            val service = instance ?: return false
+            val path = Path().apply { moveTo(x, y) }
+            val gesture = GestureDescription.Builder()
+                .addStroke(GestureDescription.StrokeDescription(path, 0, 650))
+                .build()
+            return service.dispatchGesture(gesture, null, null)
+        }
+
         fun swipe(startX: Float, startY: Float, endX: Float, endY: Float, durationMs: Long = 320): Boolean {
             val service = instance ?: return false
             val path = Path().apply {

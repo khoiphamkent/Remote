@@ -251,9 +251,22 @@ class LcdAgentService : Service() {
                     command.optDouble("startX", -1.0),
                     command.optDouble("startY", -1.0),
                     command.optDouble("endX", -1.0),
-                    command.optDouble("endY", -1.0)
+                    command.optDouble("endY", -1.0),
+                    command.optLong("durationMs", 320L)
                 )
                 sendCommandResult(commandId, ok, if (ok) "Swipe sent" else "Accessibility service is not enabled")
+            }
+            "scroll" -> {
+                val ok = performScroll(
+                    command.optDouble("x", 0.5),
+                    command.optDouble("y", 0.5),
+                    command.optDouble("deltaY", 0.0)
+                )
+                sendCommandResult(commandId, ok, if (ok) "Scroll sent" else "Accessibility service is not enabled")
+            }
+            "long-press" -> {
+                val ok = performLongPress(command.optDouble("x", -1.0), command.optDouble("y", -1.0))
+                sendCommandResult(commandId, ok, if (ok) "Long press sent" else "Accessibility service is not enabled")
             }
             "back" -> {
                 val ok = LcdAccessibilityService.back()
@@ -492,7 +505,13 @@ class LcdAgentService : Service() {
         return LcdAccessibilityService.tap((x * width).toFloat(), (y * height).toFloat())
     }
 
-    private fun performSwipe(startX: Double, startY: Double, endX: Double, endY: Double): Boolean {
+    private fun performSwipe(
+        startX: Double,
+        startY: Double,
+        endX: Double,
+        endY: Double,
+        durationMs: Long = 320L
+    ): Boolean {
         if (
             startX !in 0.0..1.0 ||
             startY !in 0.0..1.0 ||
@@ -506,8 +525,25 @@ class LcdAgentService : Service() {
             (startX * width).toFloat(),
             (startY * height).toFloat(),
             (endX * width).toFloat(),
-            (endY * height).toFloat()
+            (endY * height).toFloat(),
+            durationMs.coerceIn(80L, 700L)
         )
+    }
+
+    private fun performScroll(x: Double, y: Double, deltaY: Double): Boolean {
+        if (x !in 0.0..1.0 || y !in 0.0..1.0 || deltaY == 0.0) return false
+
+        val span = 0.34
+        val startY = if (deltaY > 0) (y + span / 2.0).coerceAtMost(0.92) else (y - span / 2.0).coerceAtLeast(0.08)
+        val endY = if (deltaY > 0) (startY - span).coerceAtLeast(0.08) else (startY + span).coerceAtMost(0.92)
+        return performSwipe(x, startY, x, endY, 180L)
+    }
+
+    private fun performLongPress(x: Double, y: Double): Boolean {
+        if (x !in 0.0..1.0 || y !in 0.0..1.0) return false
+        val width = if (screenWidth > 0) screenWidth else resources.displayMetrics.widthPixels
+        val height = if (screenHeight > 0) screenHeight else resources.displayMetrics.heightPixels
+        return LcdAccessibilityService.longPress((x * width).toFloat(), (y * height).toFloat())
     }
 
     private fun openUrl(value: String): Boolean {
