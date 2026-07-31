@@ -624,10 +624,7 @@ class LcdAgentService : Service() {
     }
 
     private fun captureRootScreenshotBytes(): ByteArray {
-        val target = "${cacheDir.absolutePath}/lcd-root-screen.png"
-        val quoted = "'${target.replace("'", "'\\''")}'"
-        runRootCommandBytes("screencap -p $quoted; chmod 600 $quoted", ROOT_COMMAND_TIMEOUT_MS)
-        return java.io.File(target).readBytes()
+        return runRootCommandBytes("screencap -p", ROOT_COMMAND_TIMEOUT_MS)
     }
 
     private fun createNotificationChannel() {
