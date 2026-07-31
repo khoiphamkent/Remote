@@ -64,6 +64,7 @@ wss.on("connection", (socket) => {
             socket,
             lastSeen: Date.now(),
             accessibilityEnabled: Boolean(message.accessibilityEnabled),
+            accessibilityReady: Boolean(message.accessibilityReady),
             rootCaptureAvailable: Boolean(message.rootCaptureAvailable),
             captureMode: message.captureMode || "None"
           });
@@ -94,6 +95,7 @@ wss.on("connection", (socket) => {
         if (agent) {
           agent.lastSeen = Date.now();
           agent.accessibilityEnabled = Boolean(message.accessibilityEnabled);
+          agent.accessibilityReady = Boolean(message.accessibilityReady);
           agent.rootCaptureAvailable = Boolean(message.rootCaptureAvailable);
           agent.captureMode = message.captureMode || agent.captureMode || "None";
           broadcastDevices();
@@ -200,6 +202,7 @@ function getDeviceList() {
       online: agent.socket.readyState === WebSocket.OPEN,
       lastSeen: agent.lastSeen,
       accessibilityEnabled: Boolean(agent.accessibilityEnabled),
+      accessibilityReady: Boolean(agent.accessibilityReady),
       rootCaptureAvailable: Boolean(agent.rootCaptureAvailable),
       captureMode: agent.captureMode || "None"
     }))
@@ -211,6 +214,9 @@ function updateAgentFromStatusMessage(deviceCode, message) {
   if (!agent) return;
   if (typeof message.accessibilityEnabled !== "undefined") {
     agent.accessibilityEnabled = Boolean(message.accessibilityEnabled);
+  }
+  if (typeof message.accessibilityReady !== "undefined") {
+    agent.accessibilityReady = Boolean(message.accessibilityReady);
   }
   if (typeof message.rootCaptureAvailable !== "undefined") {
     agent.rootCaptureAvailable = Boolean(message.rootCaptureAvailable);

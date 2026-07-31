@@ -66,6 +66,7 @@ function connectDashboard() {
           devicesByCode.set(message.deviceCode, {
             ...current,
             accessibilityEnabled: Boolean(message.accessibilityEnabled),
+            accessibilityReady: Boolean(message.accessibilityReady),
             rootCaptureAvailable: Boolean(message.rootCaptureAvailable),
             captureMode: message.captureMode || current.captureMode || "None"
           });
@@ -138,8 +139,12 @@ function renderDevices(devices) {
     status.textContent = device.online ? "Online" : "Offline";
 
     const control = document.createElement("span");
-    control.className = device.accessibilityEnabled ? "device-status online" : "device-status warning";
-    control.textContent = device.accessibilityEnabled ? "Control: Enabled" : "Control: Needs Accessibility";
+    control.className = device.accessibilityReady ? "device-status online" : "device-status warning";
+    control.textContent = device.accessibilityReady
+      ? "Control: Ready"
+      : device.accessibilityEnabled
+        ? "Control: Toggle Accessibility"
+        : "Control: Needs Accessibility";
 
     const capture = document.createElement("span");
     capture.className = device.captureMode === "Root" ? "device-status online" : "device-status";
@@ -149,7 +154,7 @@ function renderDevices(devices) {
     enableControl.className = "button secondary-button";
     enableControl.textContent = "Enable Control";
     enableControl.onclick = () => sendAgentCommand(device.deviceCode, { type: "enable-control" });
-    enableControl.hidden = Boolean(device.accessibilityEnabled);
+    enableControl.hidden = Boolean(device.accessibilityReady);
 
     const edit = document.createElement("button");
     edit.className = "button secondary-button";
@@ -198,11 +203,11 @@ function openViewer(deviceCode) {
 
 function refreshViewerControls() {
   const device = devicesByCode.get(activeDeviceCode);
-  const enabled = Boolean(device?.accessibilityEnabled);
-  enableControlButton.hidden = enabled || !activeDeviceCode;
-  backButton.disabled = !enabled;
-  homeButton.disabled = !enabled;
-  recentsButton.disabled = !enabled;
+  const ready = Boolean(device?.accessibilityReady);
+  enableControlButton.hidden = ready || !activeDeviceCode;
+  backButton.disabled = !ready;
+  homeButton.disabled = !ready;
+  recentsButton.disabled = !ready;
 }
 
 function openEditDialog(deviceCode) {
@@ -281,6 +286,7 @@ function updateViewerStatusFromCommand(message) {
   const lower = text.toLowerCase();
   const isControlStatus =
     lower.includes("accessibility") ||
+    lower.includes("remote control") ||
     lower.includes("back sent") ||
     lower.includes("home sent") ||
     lower.includes("recents sent") ||
@@ -368,6 +374,10 @@ screenImage.addEventListener("error", () => {
 
 screenImage.addEventListener("pointerdown", (event) => {
   if (!activeDeviceCode) return;
+  if (!isControlReady()) {
+    commandStatus.textContent = `${activeDeviceCode}: remote control is not ready. Toggle LCD Agent Accessibility off and on.`;
+    return;
+  }
   event.preventDefault();
   if (event.button === 1) {
     sendAgentCommand(activeDeviceCode, { type: "home" });
@@ -388,6 +398,7 @@ screenImage.addEventListener("pointerdown", (event) => {
 
 screenImage.addEventListener("pointermove", (event) => {
   if (!activeDeviceCode || !pointerStart || !pointerLast || event.buttons !== 1) return;
+  if (!isControlReady()) return;
   event.preventDefault();
   const point = getNormalizedPoint(screenImage, event);
   if (!point) return;
@@ -413,6 +424,7 @@ screenImage.addEventListener("pointermove", (event) => {
 
 screenImage.addEventListener("pointerup", (event) => {
   if (!activeDeviceCode || !pointerStart) return;
+  if (!isControlReady()) return;
   event.preventDefault();
   const end = getNormalizedPoint(screenImage, event);
   const start = pointerStart;
@@ -446,6 +458,7 @@ screenImage.addEventListener("pointercancel", () => {
 
 screenImage.addEventListener("wheel", (event) => {
   if (!activeDeviceCode) return;
+  if (!isControlReady()) return;
   event.preventDefault();
   const now = Date.now();
   if (now - lastWheelSentAt < 180) return;
@@ -478,6 +491,10 @@ function applyFitMode() {
   viewerPanel.classList.toggle("fit-contain", fitMode === "contain");
   viewerPanel.classList.toggle("fit-width", fitMode === "width");
   fitModeButton.textContent = fitMode === "stretch" ? "Stretch" : fitMode === "width" ? "Width" : "Fit";
+}
+
+function isControlReady() {
+  return Boolean(devicesByCode.get(activeDeviceCode)?.accessibilityReady);
 }
 
 connectDashboard();

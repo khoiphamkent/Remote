@@ -310,7 +310,11 @@ class MainActivity : Activity() {
             prefs.getBoolean(KEY_SCREEN_CAPTURE_ACCEPTED, false) -> "Screen view: accepted once, reopen setup only if Android killed it"
             else -> "Screen view: needs one-time accept"
         }
-        val tap = if (isAccessibilityEnabled()) "Remote control: enabled" else "Remote control: needs Accessibility"
+        val tap = when {
+            LcdAccessibilityService.isReady() -> "Remote control: ready"
+            isAccessibilityEnabled() -> "Remote control: enabled, waiting for service"
+            else -> "Remote control: needs Accessibility"
+        }
         val root = if (LcdAgentService.rootCaptureAvailable) "Root capture: available" else "Root capture: not active"
         val capture = "Capture mode: ${LcdAgentService.captureMode}"
         permissionStatusText.text = "$service\n$relay\n$kiosk\n$screen\n$root\n$capture\n$tap\nDevice: $deviceCode"

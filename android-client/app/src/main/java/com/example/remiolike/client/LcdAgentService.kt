@@ -218,13 +218,18 @@ class LcdAgentService : Service() {
                 sendCommandResult(commandId, ok, if (ok) "Accessibility settings opened on LCD" else "Could not open Accessibility settings")
             }
             "enable-control" -> {
-                val ok = isAccessibilityEnabled() || enableAccessibilityWithRoot()
+                val ok = isRemoteControlReady() || enableAccessibilityWithRoot()
                 if (!ok) openAccessibilitySettings()
-                sendCommandResult(commandId, ok, if (ok) "Accessibility service is enabled" else "Open Accessibility on LCD and enable LCD Agent")
+                sendCommandResult(commandId, ok, if (ok) "Remote control is ready" else "Open Accessibility on LCD and enable LCD Agent")
             }
             "accessibility-status" -> {
-                val ok = isAccessibilityEnabled()
-                sendCommandResult(commandId, ok, if (ok) "Accessibility service is enabled" else "Accessibility service is not enabled")
+                val ok = isRemoteControlReady()
+                val statusText = when {
+                    ok -> "Remote control is ready"
+                    isAccessibilityEnabled() -> "Accessibility is enabled but service is not ready. Toggle LCD Agent off and on."
+                    else -> "Accessibility service is not enabled"
+                }
+                sendCommandResult(commandId, ok, statusText)
             }
             "start-screen" -> {
                 startBestScreenCapture(commandId)
@@ -244,7 +249,7 @@ class LcdAgentService : Service() {
             }
             "tap" -> {
                 val ok = performTap(command.optDouble("x", -1.0), command.optDouble("y", -1.0))
-                sendCommandResult(commandId, ok, if (ok) "Tap sent" else "Accessibility service is not enabled")
+                sendCommandResult(commandId, ok, if (ok) "Tap sent" else "Remote control is not ready")
             }
             "swipe" -> {
                 val ok = performSwipe(
@@ -254,7 +259,7 @@ class LcdAgentService : Service() {
                     command.optDouble("endY", -1.0),
                     command.optLong("durationMs", 320L)
                 )
-                sendCommandResult(commandId, ok, if (ok) "Swipe sent" else "Accessibility service is not enabled")
+                sendCommandResult(commandId, ok, if (ok) "Swipe sent" else "Remote control is not ready")
             }
             "scroll" -> {
                 val ok = performScroll(
@@ -262,23 +267,23 @@ class LcdAgentService : Service() {
                     command.optDouble("y", 0.5),
                     command.optDouble("deltaY", 0.0)
                 )
-                sendCommandResult(commandId, ok, if (ok) "Scroll sent" else "Accessibility service is not enabled")
+                sendCommandResult(commandId, ok, if (ok) "Scroll sent" else "Remote control is not ready")
             }
             "long-press" -> {
                 val ok = performLongPress(command.optDouble("x", -1.0), command.optDouble("y", -1.0))
-                sendCommandResult(commandId, ok, if (ok) "Long press sent" else "Accessibility service is not enabled")
+                sendCommandResult(commandId, ok, if (ok) "Long press sent" else "Remote control is not ready")
             }
             "back" -> {
                 val ok = LcdAccessibilityService.back()
-                sendCommandResult(commandId, ok, if (ok) "Back sent" else "Accessibility service is not enabled")
+                sendCommandResult(commandId, ok, if (ok) "Back sent" else "Remote control is not ready")
             }
             "home" -> {
                 val ok = LcdAccessibilityService.home()
-                sendCommandResult(commandId, ok, if (ok) "Home sent" else "Accessibility service is not enabled")
+                sendCommandResult(commandId, ok, if (ok) "Home sent" else "Remote control is not ready")
             }
             "recents" -> {
                 val ok = LcdAccessibilityService.recents()
-                sendCommandResult(commandId, ok, if (ok) "Recents sent" else "Accessibility service is not enabled")
+                sendCommandResult(commandId, ok, if (ok) "Recents sent" else "Remote control is not ready")
             }
             else -> sendCommandResult(commandId, false, "Unknown command")
         }
@@ -620,6 +625,10 @@ class LcdAgentService : Service() {
         return enabledServices.split(":").any { it.equals(expected, ignoreCase = true) }
     }
 
+    private fun isRemoteControlReady(): Boolean {
+        return isAccessibilityEnabled() && LcdAccessibilityService.isReady()
+    }
+
     private fun buildAgentStatusMessage(type: String): String {
         return JSONObject()
             .put("type", type)
@@ -627,6 +636,7 @@ class LcdAgentService : Service() {
             .put("sessionId", deviceCode)
             .put("deviceCode", deviceCode)
             .put("accessibilityEnabled", isAccessibilityEnabled())
+            .put("accessibilityReady", LcdAccessibilityService.isReady())
             .put("rootCaptureAvailable", rootCaptureAvailable)
             .put("captureMode", captureMode)
             .toString()
@@ -641,6 +651,7 @@ class LcdAgentService : Service() {
                 .put("ok", ok)
                 .put("message", message)
                 .put("accessibilityEnabled", isAccessibilityEnabled())
+                .put("accessibilityReady", LcdAccessibilityService.isReady())
                 .put("rootCaptureAvailable", rootCaptureAvailable)
                 .put("captureMode", captureMode)
                 .toString()

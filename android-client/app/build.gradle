@@ -11,8 +11,8 @@ android {
         applicationId "com.example.remiolike.client"
         minSdk 23
         targetSdk 33
-        versionCode 23
-        versionName "0.6.4-mouse"
+        versionCode 24
+        versionName "0.6.5-controlfix"
     }
 
     compileOptions {
