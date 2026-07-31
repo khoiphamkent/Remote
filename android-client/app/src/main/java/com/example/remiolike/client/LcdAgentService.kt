@@ -609,22 +609,40 @@ class LcdAgentService : Service() {
     }
 
     private fun runRootCommandBytes(command: String, timeoutMs: Long): ByteArray {
-        val process = Runtime.getRuntime().exec(arrayOf("su", "-c", command))
+        val process = ProcessBuilder("su", "-c", command)
+            .redirectErrorStream(true)
+            .start()
+        val output = ByteArrayOutputStream()
+        val reader = Thread {
+            try {
+                process.inputStream.use { input ->
+                    input.copyTo(output)
+                }
+            } catch (_: Exception) {
+            }
+        }.also { it.start() }
         val finished = process.waitFor(timeoutMs, TimeUnit.MILLISECONDS)
         if (!finished) {
             process.destroyForcibly()
+            reader.join(1000)
             throw IllegalStateException("Root command timed out")
         }
-        val output = process.inputStream.readBytes()
+        reader.join(1000)
         if (process.exitValue() != 0) {
-            val error = process.errorStream.readBytes().decodeToString()
+            val error = output.toByteArray().decodeToString()
             throw IllegalStateException(error.ifBlank { "Root command failed" })
         }
-        return output
+        return output.toByteArray()
     }
 
     private fun captureRootScreenshotBytes(): ByteArray {
-        return runRootCommandBytes("screencap -p", ROOT_COMMAND_TIMEOUT_MS)
+        val raw = runRootCommandBytes("screencap -p", ROOT_COMMAND_TIMEOUT_MS)
+        if (raw.isNotEmpty() && BitmapFactory.decodeByteArray(raw, 0, raw.size) != null) {
+            return raw
+        }
+
+        val sanitized = raw.filterNot { it == '\r'.code.toByte() }.toByteArray()
+        return if (sanitized.isNotEmpty()) sanitized else raw
     }
 
     private fun createNotificationChannel() {
