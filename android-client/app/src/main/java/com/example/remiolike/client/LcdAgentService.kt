@@ -54,6 +54,7 @@ class LcdAgentService : Service() {
     private var captureActive = false
     private var rootCaptureThread: Thread? = null
     private var rootCaptureActive = false
+    private var rootCaptureFailureCount = 0
     private var lastFrameAt = 0L
     private var screenWidth = 0
     private var screenHeight = 0
@@ -307,6 +308,7 @@ class LcdAgentService : Service() {
 
         rootCaptureAvailable = true
         captureMode = "Root"
+        rootCaptureFailureCount = 0
         rootCaptureActive = true
         rootCaptureThread = Thread {
             while (rootCaptureActive && !Thread.currentThread().isInterrupted) {
@@ -327,12 +329,27 @@ class LcdAgentService : Service() {
                 }.getOrDefault(false)
 
                 if (!sent) {
-                    rootCaptureAvailable = false
-                    captureMode = if (mediaProjection != null) "MediaProjection" else "None"
-                    rootCaptureActive = false
-                    return@Thread
+                    rootCaptureFailureCount++
+                    if (!hasRootScreencap()) {
+                        rootCaptureAvailable = false
+                        captureMode = if (mediaProjection != null) "MediaProjection" else "None"
+                        rootCaptureActive = false
+                        return@Thread
+                    }
+
+                    if (rootCaptureFailureCount >= 10) {
+                        rootCaptureFailureCount = 0
+                    }
+
+                    try {
+                        Thread.sleep(500L)
+                    } catch (_: InterruptedException) {
+                        return@Thread
+                    }
+                    continue
                 }
 
+                rootCaptureFailureCount = 0
                 val elapsed = System.currentTimeMillis() - startedAt
                 val sleepMs = (ROOT_FRAME_INTERVAL_MS - elapsed).coerceAtLeast(20L)
                 try {
