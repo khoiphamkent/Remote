@@ -231,7 +231,8 @@ class LcdAgentService : Service() {
                 if (rootStarted) {
                     sendCommandResult(commandId, true, "Root screen stream started")
                 } else if (mediaProjection == null) {
-                    sendCommandResult(commandId, false, "Open LCD Agent and accept screen sharing permission")
+                    openScreenCapturePermission()
+                    sendCommandResult(commandId, false, "Screen share permission needed. Accept it on the LCD device.")
                 } else {
                     val ok = startScreenCaptureSafely()
                     sendCommandResult(commandId, ok, if (ok) "Screen stream started" else "Screen stream failed")
@@ -248,7 +249,8 @@ class LcdAgentService : Service() {
                 if (rootStarted) {
                     sendCommandResult(commandId, true, "Root screen stream started")
                 } else if (mediaProjection == null) {
-                    sendCommandResult(commandId, false, "Open LCD Agent and accept screen sharing permission")
+                    openScreenCapturePermission()
+                    sendCommandResult(commandId, false, "Screen share permission needed. Accept it on the LCD device.")
                 } else {
                     val ok = startScreenCaptureSafely()
                     sendCommandResult(commandId, ok, if (ok) "Screen stream started" else "Screen stream failed")
@@ -502,6 +504,16 @@ class LcdAgentService : Service() {
             startActivity(
                 Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+        }.isSuccess
+    }
+
+    private fun openScreenCapturePermission(): Boolean {
+        return runCatching {
+            startActivity(
+                Intent(this, MainActivity::class.java)
+                    .setAction(MainActivity.ACTION_REQUEST_SCREEN_CAPTURE)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             )
         }.isSuccess
     }

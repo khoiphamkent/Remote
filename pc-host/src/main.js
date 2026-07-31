@@ -1,7 +1,7 @@
 const { app, BrowserWindow, shell, session } = require("electron");
 
 const DASHBOARD_URL = process.env.LCD_DASHBOARD_URL || "https://remote-4617.onrender.com/dashboard.html";
-const DASHBOARD_VERSION = "stable-054";
+const DASHBOARD_VERSION = "stable-061-screenfix";
 
 let mainWindow;
 

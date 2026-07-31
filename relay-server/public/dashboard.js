@@ -22,6 +22,7 @@ let editingDeviceCode = "";
 const devicesByCode = new Map();
 let lastFrameTime = 0;
 let pointerStart = null;
+let waitingForFirstFrame = false;
 const DEVICE_LABELS_KEY = "lcd-dashboard-device-labels";
 
 function connectDashboard() {
@@ -47,7 +48,7 @@ function connectDashboard() {
     if (message.type === "command-result") {
       commandStatus.textContent = `${message.deviceCode}: ${message.ok ? "OK" : "Failed"} - ${message.message || ""}`;
       if (message.deviceCode === activeDeviceCode) {
-        viewerStatus.textContent = message.message || "Waiting for screen frame...";
+        updateViewerStatusFromCommand(message);
         if (typeof message.accessibilityEnabled !== "undefined") {
           const current = devicesByCode.get(message.deviceCode) || { deviceCode: message.deviceCode, online: true };
           devicesByCode.set(message.deviceCode, {
@@ -61,6 +62,8 @@ function connectDashboard() {
         if (message.ok && message.message === "Screen capture permission accepted") {
           window.setTimeout(() => {
             if (activeDeviceCode === message.deviceCode) {
+              waitingForFirstFrame = true;
+              viewerStatus.textContent = "Screen permission accepted. Waiting for first frame...";
               sendAgentCommand(activeDeviceCode, { type: "start-screen" });
             }
           }, 500);
@@ -70,6 +73,7 @@ function connectDashboard() {
 
     if (message.type === "screen-frame" && message.deviceCode === activeDeviceCode) {
       lastFrameTime = Date.now();
+      waitingForFirstFrame = false;
       screenImage.dataset.frameWidth = message.width || "";
       screenImage.dataset.frameHeight = message.height || "";
       screenImage.src = `data:image/jpeg;base64,${message.frame}`;
@@ -156,12 +160,17 @@ function openViewer(deviceCode) {
   viewerTitle.textContent = label === deviceCode ? `${deviceCode} Viewer` : `${label} (${deviceCode})`;
   screenImage.removeAttribute("src");
   screenImage.hidden = true;
+  waitingForFirstFrame = true;
   viewerStatus.textContent = "Starting screen stream...";
   viewerPanel.hidden = false;
   commandStatus.textContent = `${deviceCode}: starting screen view...`;
   socket.send(JSON.stringify({ type: "watch-device", deviceCode }));
-  sendAgentCommand(deviceCode, { type: "start-screen" });
   sendAgentCommand(deviceCode, { type: "accessibility-status" });
+  window.setTimeout(() => {
+    if (activeDeviceCode === deviceCode) {
+      sendAgentCommand(deviceCode, { type: "start-screen" });
+    }
+  }, 250);
   refreshViewerControls();
 }
 
@@ -237,11 +246,33 @@ function sendAgentCommand(deviceCode, command) {
   }));
 }
 
+function updateViewerStatusFromCommand(message) {
+  const text = message.message || "Waiting for screen frame...";
+  const lower = text.toLowerCase();
+  const isControlStatus =
+    lower.includes("accessibility") ||
+    lower.includes("back sent") ||
+    lower.includes("home sent") ||
+    lower.includes("recents sent") ||
+    lower.includes("tap sent") ||
+    lower.includes("swipe sent");
+
+  if (waitingForFirstFrame && isControlStatus) {
+    if (!viewerStatus.textContent || viewerStatus.textContent.includes("Accessibility")) {
+      viewerStatus.textContent = "Waiting for LCD screen frame...";
+    }
+    return;
+  }
+
+  viewerStatus.textContent = text;
+}
+
 closeViewer.addEventListener("click", () => {
   if (activeDeviceCode) {
     sendAgentCommand(activeDeviceCode, { type: "stop-screen" });
   }
   activeDeviceCode = "";
+  waitingForFirstFrame = false;
   viewerPanel.hidden = true;
   screenImage.removeAttribute("src");
   screenImage.hidden = true;

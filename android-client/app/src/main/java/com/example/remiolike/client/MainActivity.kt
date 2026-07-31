@@ -48,6 +48,7 @@ class MainActivity : Activity() {
         startAgentService()
         requestNotificationPermissionIfNeeded()
         applyKioskIfDeviceOwner()
+        handleAction(intent)
 
         val needsCodeAcknowledgement = !prefs.getBoolean(KEY_CODE_ACKNOWLEDGED, false)
         showDeviceCodeOnce()
@@ -56,6 +57,12 @@ class MainActivity : Activity() {
                 startInitialPermissionSetup()
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleAction(intent)
     }
 
     override fun onResume() {
@@ -200,6 +207,13 @@ class MainActivity : Activity() {
         requestScreenCapture()
     }
 
+    private fun handleAction(intent: Intent?) {
+        if (intent?.action != ACTION_REQUEST_SCREEN_CAPTURE) return
+        relayInput.post {
+            requestScreenCapture()
+        }
+    }
+
     private fun enterKioskOrShowSetup() {
         if (applyKioskIfDeviceOwner()) return
 
@@ -324,6 +338,8 @@ class MainActivity : Activity() {
     }
 
     companion object {
+        const val ACTION_REQUEST_SCREEN_CAPTURE = "com.example.remiolike.client.REQUEST_SCREEN_CAPTURE"
+
         private const val DEFAULT_RELAY_URL = "https://remote-4617.onrender.com"
         private const val KEY_DEVICE_CODE = "device_code"
         private const val KEY_CODE_ACKNOWLEDGED = "device_code_acknowledged"
