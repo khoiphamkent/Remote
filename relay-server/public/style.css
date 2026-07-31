@@ -150,11 +150,12 @@ input {
 
 .viewer-panel {
   position: fixed;
-  inset: 56px 24px 24px;
+  inset: 0;
+  z-index: 10;
   display: grid;
   grid-template-rows: auto 1fr;
   border: 1px solid #2f3a46;
-  border-radius: 8px;
+  border-radius: 0;
   background: #101418;
   box-shadow: 0 18px 60px rgba(0, 0, 0, 0.35);
 }
@@ -182,26 +183,48 @@ input {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .viewer-stage {
   display: grid;
   place-items: center;
-  padding: 16px;
-  overflow: hidden;
+  padding: 8px;
+  overflow: auto;
   position: relative;
 }
 
 .viewer-stage img,
 .viewer-stage video {
-  max-width: 100%;
-  max-height: 100%;
+  display: block;
   border: 1px solid #2f3a46;
-  border-radius: 8px;
+  border-radius: 0;
   background: #050708;
   cursor: crosshair;
-  object-fit: contain;
   touch-action: none;
+}
+
+.fit-width .viewer-stage {
+  align-items: start;
+}
+
+.fit-width .viewer-stage img {
+  width: 100%;
+  height: auto;
+  max-width: none;
+  max-height: none;
+}
+
+.fit-contain .viewer-stage {
+  overflow: hidden;
+}
+
+.fit-contain .viewer-stage img {
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 100%;
 }
 
 .viewer-stage img[hidden],

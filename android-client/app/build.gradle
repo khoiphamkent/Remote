@@ -11,8 +11,8 @@ android {
         applicationId "com.example.remiolike.client"
         minSdk 23
         targetSdk 33
-        versionCode 20
-        versionName "0.6.1-screenfix"
+        versionCode 21
+        versionName "0.6.2-viewfps"
     }
 
     compileOptions {

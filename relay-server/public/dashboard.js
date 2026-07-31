@@ -5,6 +5,8 @@ const viewerPanel = document.querySelector("#viewerPanel");
 const viewerTitle = document.querySelector("#viewerTitle");
 const closeViewer = document.querySelector("#closeViewer");
 const enableControlButton = document.querySelector("#enableControlButton");
+const fitModeButton = document.querySelector("#fitModeButton");
+const fullscreenButton = document.querySelector("#fullscreenButton");
 const backButton = document.querySelector("#backButton");
 const homeButton = document.querySelector("#homeButton");
 const recentsButton = document.querySelector("#recentsButton");
@@ -23,6 +25,10 @@ const devicesByCode = new Map();
 let lastFrameTime = 0;
 let pointerStart = null;
 let waitingForFirstFrame = false;
+let fitMode = localStorage.getItem("lcd-dashboard-fit-mode") || "width";
+let frameCount = 0;
+let fpsStartedAt = Date.now();
+let currentFps = 0;
 const DEVICE_LABELS_KEY = "lcd-dashboard-device-labels";
 
 function connectDashboard() {
@@ -73,6 +79,12 @@ function connectDashboard() {
 
     if (message.type === "screen-frame" && message.deviceCode === activeDeviceCode) {
       lastFrameTime = Date.now();
+      frameCount++;
+      if (lastFrameTime - fpsStartedAt >= 1000) {
+        currentFps = Math.round((frameCount * 1000) / (lastFrameTime - fpsStartedAt));
+        frameCount = 0;
+        fpsStartedAt = lastFrameTime;
+      }
       waitingForFirstFrame = false;
       screenImage.dataset.frameWidth = message.width || "";
       screenImage.dataset.frameHeight = message.height || "";
@@ -161,8 +173,12 @@ function openViewer(deviceCode) {
   screenImage.removeAttribute("src");
   screenImage.hidden = true;
   waitingForFirstFrame = true;
+  frameCount = 0;
+  fpsStartedAt = Date.now();
+  currentFps = 0;
   viewerStatus.textContent = "Starting screen stream...";
   viewerPanel.hidden = false;
+  applyFitMode();
   commandStatus.textContent = `${deviceCode}: starting screen view...`;
   socket.send(JSON.stringify({ type: "watch-device", deviceCode }));
   sendAgentCommand(deviceCode, { type: "accessibility-status" });
@@ -294,6 +310,21 @@ enableControlButton.addEventListener("click", () => {
   if (activeDeviceCode) sendAgentCommand(activeDeviceCode, { type: "enable-control" });
 });
 
+fitModeButton.addEventListener("click", () => {
+  fitMode = fitMode === "width" ? "contain" : "width";
+  localStorage.setItem("lcd-dashboard-fit-mode", fitMode);
+  applyFitMode();
+});
+
+fullscreenButton.addEventListener("click", () => {
+  const target = viewerPanel;
+  if (!document.fullscreenElement) {
+    target.requestFullscreen?.();
+  } else {
+    document.exitFullscreen?.();
+  }
+});
+
 saveEditButton.addEventListener("click", saveEditLabel);
 resetEditButton.addEventListener("click", resetEditLabel);
 cancelEditButton.addEventListener("click", closeEditDialog);
@@ -310,7 +341,7 @@ editNameInput.addEventListener("keydown", (event) => {
 screenImage.addEventListener("load", () => {
   if (activeDeviceCode) {
     screenImage.hidden = false;
-    viewerStatus.textContent = `Last frame: ${new Date(lastFrameTime).toLocaleTimeString()}`;
+    viewerStatus.textContent = `Last frame: ${new Date(lastFrameTime).toLocaleTimeString()} | ${currentFps} fps`;
   }
 });
 
@@ -352,6 +383,12 @@ function getNormalizedPoint(target, event) {
     x: Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)),
     y: Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height))
   };
+}
+
+function applyFitMode() {
+  viewerPanel.classList.toggle("fit-contain", fitMode === "contain");
+  viewerPanel.classList.toggle("fit-width", fitMode === "width");
+  fitModeButton.textContent = fitMode === "width" ? "Fit" : "Width";
 }
 
 connectDashboard();

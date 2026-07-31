@@ -700,11 +700,11 @@ class LcdAgentService : Service() {
         private const val KEY_DEVICE_CODE = "device_code"
         private const val CHANNEL_ID = "lcd_agent"
         private const val NOTIFICATION_ID = 1001
-        private const val FRAME_INTERVAL_MS = 180L
-        private const val ROOT_FRAME_INTERVAL_MS = 220L
+        private const val FRAME_INTERVAL_MS = 140L
+        private const val ROOT_FRAME_INTERVAL_MS = 160L
         private const val ROOT_COMMAND_TIMEOUT_MS = 5000L
-        private const val ROOT_TARGET_WIDTH = 640
-        private const val ROOT_JPEG_QUALITY = 48
+        private const val ROOT_TARGET_WIDTH = 720
+        private const val ROOT_JPEG_QUALITY = 52
 
         @Volatile var isRunning = false
         @Volatile var hasProjection = false
