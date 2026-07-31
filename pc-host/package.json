@@ -1,6 +1,6 @@
 {
   "name": "lcd-dashboard-pc",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "Desktop dashboard for viewing online LCD agents.",
   "author": "Local",
   "main": "src/main.js",

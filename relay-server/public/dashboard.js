@@ -25,7 +25,8 @@ const devicesByCode = new Map();
 let lastFrameTime = 0;
 let pointerStart = null;
 let waitingForFirstFrame = false;
-let fitMode = localStorage.getItem("lcd-dashboard-fit-mode") || "width";
+let fitMode = localStorage.getItem("lcd-dashboard-fit-mode") || "stretch";
+if (fitMode === "contain") fitMode = "stretch";
 let frameCount = 0;
 let fpsStartedAt = Date.now();
 let currentFps = 0;
@@ -311,7 +312,7 @@ enableControlButton.addEventListener("click", () => {
 });
 
 fitModeButton.addEventListener("click", () => {
-  fitMode = fitMode === "width" ? "contain" : "width";
+  fitMode = fitMode === "stretch" ? "width" : fitMode === "width" ? "contain" : "stretch";
   localStorage.setItem("lcd-dashboard-fit-mode", fitMode);
   applyFitMode();
 });
@@ -386,9 +387,10 @@ function getNormalizedPoint(target, event) {
 }
 
 function applyFitMode() {
+  viewerPanel.classList.toggle("fit-stretch", fitMode === "stretch");
   viewerPanel.classList.toggle("fit-contain", fitMode === "contain");
   viewerPanel.classList.toggle("fit-width", fitMode === "width");
-  fitModeButton.textContent = fitMode === "width" ? "Fit" : "Width";
+  fitModeButton.textContent = fitMode === "stretch" ? "Stretch" : fitMode === "width" ? "Width" : "Fit";
 }
 
 connectDashboard();

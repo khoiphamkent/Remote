@@ -227,17 +227,7 @@ class LcdAgentService : Service() {
                 sendCommandResult(commandId, ok, if (ok) "Accessibility service is enabled" else "Accessibility service is not enabled")
             }
             "start-screen" -> {
-                captureActive = true
-                val rootStarted = startRootCaptureSafely()
-                if (rootStarted) {
-                    sendCommandResult(commandId, true, "Root screen stream started")
-                } else if (mediaProjection == null) {
-                    openScreenCapturePermission()
-                    sendCommandResult(commandId, false, "Screen share permission needed. Accept it on the LCD device.")
-                } else {
-                    val ok = startScreenCaptureSafely()
-                    sendCommandResult(commandId, ok, if (ok) "Screen stream started" else "Screen stream failed")
-                }
+                startBestScreenCapture(commandId)
             }
             "stop-screen" -> {
                 captureActive = false
@@ -245,17 +235,7 @@ class LcdAgentService : Service() {
                 sendCommandResult(commandId, true, "Screen stream stopped")
             }
             "start-webrtc" -> {
-                captureActive = true
-                val rootStarted = startRootCaptureSafely()
-                if (rootStarted) {
-                    sendCommandResult(commandId, true, "Root screen stream started")
-                } else if (mediaProjection == null) {
-                    openScreenCapturePermission()
-                    sendCommandResult(commandId, false, "Screen share permission needed. Accept it on the LCD device.")
-                } else {
-                    val ok = startScreenCaptureSafely()
-                    sendCommandResult(commandId, ok, if (ok) "Screen stream started" else "Screen stream failed")
-                }
+                startBestScreenCapture(commandId)
             }
             "stop-webrtc" -> {
                 captureActive = false
@@ -296,6 +276,31 @@ class LcdAgentService : Service() {
             startScreenCapture()
             virtualDisplay != null
         }.getOrDefault(false)
+    }
+
+    private fun startBestScreenCapture(commandId: String) {
+        captureActive = true
+        if (mediaProjection != null) {
+            stopRootCapture()
+            val ok = startScreenCaptureSafely()
+            sendCommandResult(commandId, ok, if (ok) "Fast screen stream started" else "Fast screen stream failed")
+            return
+        }
+
+        val rootStarted = startRootCaptureSafely()
+        if (rootStarted) {
+            sendCommandResult(commandId, true, "Root screen stream started")
+            return
+        }
+
+        openScreenCapturePermission()
+        sendCommandResult(commandId, false, "Screen share permission needed. Accept it on the LCD device.")
+    }
+
+    private fun stopRootCapture() {
+        rootCaptureActive = false
+        rootCaptureThread?.interrupt()
+        rootCaptureThread = null
     }
 
     private fun startRootCaptureSafely(): Boolean {
@@ -418,9 +423,7 @@ class LcdAgentService : Service() {
     }
 
     private fun stopScreenCapture(keepProjection: Boolean = false) {
-        rootCaptureActive = false
-        rootCaptureThread?.interrupt()
-        rootCaptureThread = null
+        stopRootCapture()
 
         virtualDisplay?.release()
         virtualDisplay = null
@@ -700,11 +703,11 @@ class LcdAgentService : Service() {
         private const val KEY_DEVICE_CODE = "device_code"
         private const val CHANNEL_ID = "lcd_agent"
         private const val NOTIFICATION_ID = 1001
-        private const val FRAME_INTERVAL_MS = 140L
-        private const val ROOT_FRAME_INTERVAL_MS = 160L
+        private const val FRAME_INTERVAL_MS = 100L
+        private const val ROOT_FRAME_INTERVAL_MS = 260L
         private const val ROOT_COMMAND_TIMEOUT_MS = 5000L
-        private const val ROOT_TARGET_WIDTH = 720
-        private const val ROOT_JPEG_QUALITY = 52
+        private const val ROOT_TARGET_WIDTH = 600
+        private const val ROOT_JPEG_QUALITY = 42
 
         @Volatile var isRunning = false
         @Volatile var hasProjection = false
