@@ -507,7 +507,9 @@ class LcdAgentService : Service() {
         if (x !in 0.0..1.0 || y !in 0.0..1.0) return false
         val width = if (screenWidth > 0) screenWidth else resources.displayMetrics.widthPixels
         val height = if (screenHeight > 0) screenHeight else resources.displayMetrics.heightPixels
-        return LcdAccessibilityService.tap((x * width).toFloat(), (y * height).toFloat())
+        val px = (x * width).toFloat()
+        val py = (y * height).toFloat()
+        return performRootTap(px, py) || LcdAccessibilityService.tap(px, py)
     }
 
     private fun performSwipe(
@@ -526,13 +528,12 @@ class LcdAgentService : Service() {
 
         val width = if (screenWidth > 0) screenWidth else resources.displayMetrics.widthPixels
         val height = if (screenHeight > 0) screenHeight else resources.displayMetrics.heightPixels
-        return LcdAccessibilityService.swipe(
-            (startX * width).toFloat(),
-            (startY * height).toFloat(),
-            (endX * width).toFloat(),
-            (endY * height).toFloat(),
-            durationMs.coerceIn(80L, 700L)
-        )
+        val sx = (startX * width).toFloat()
+        val sy = (startY * height).toFloat()
+        val ex = (endX * width).toFloat()
+        val ey = (endY * height).toFloat()
+        return performRootSwipe(sx, sy, ex, ey, durationMs.coerceIn(80L, 700L)) ||
+            LcdAccessibilityService.swipe(sx, sy, ex, ey, durationMs.coerceIn(80L, 700L))
     }
 
     private fun performScroll(x: Double, y: Double, deltaY: Double): Boolean {
@@ -548,7 +549,30 @@ class LcdAgentService : Service() {
         if (x !in 0.0..1.0 || y !in 0.0..1.0) return false
         val width = if (screenWidth > 0) screenWidth else resources.displayMetrics.widthPixels
         val height = if (screenHeight > 0) screenHeight else resources.displayMetrics.heightPixels
-        return LcdAccessibilityService.longPress((x * width).toFloat(), (y * height).toFloat())
+        val px = (x * width).toFloat()
+        val py = (y * height).toFloat()
+        return performRootLongPress(px, py) || LcdAccessibilityService.longPress(px, py)
+    }
+
+    private fun performRootTap(x: Float, y: Float): Boolean {
+        return runRootInputCommand("input tap ${x.toInt()} ${y.toInt()}")
+    }
+
+    private fun performRootSwipe(startX: Float, startY: Float, endX: Float, endY: Float, durationMs: Long): Boolean {
+        return runRootInputCommand(
+            "input swipe ${startX.toInt()} ${startY.toInt()} ${endX.toInt()} ${endY.toInt()} $durationMs"
+        )
+    }
+
+    private fun performRootLongPress(x: Float, y: Float): Boolean {
+        return runRootInputCommand("input swipe ${x.toInt()} ${y.toInt()} ${x.toInt()} ${y.toInt()} 700")
+    }
+
+    private fun runRootInputCommand(command: String): Boolean {
+        return runCatching {
+            runRootCommandBytes(command, ROOT_COMMAND_TIMEOUT_MS)
+            true
+        }.getOrDefault(false)
     }
 
     private fun openUrl(value: String): Boolean {
